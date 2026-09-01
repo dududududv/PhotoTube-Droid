@@ -2,46 +2,31 @@ package com.yunai.phototube
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.toArgb
+import coil3.SingletonImageLoader
+import com.yunai.phototube.data.AppContainer
+import com.yunai.phototube.ui.PhotoTubeApp
+import com.yunai.phototube.ui.theme.PhotoTubeColors
 import com.yunai.phototube.ui.theme.PhotoTubeDroidTheme
 
 class MainActivity : ComponentActivity() {
+    private val appContainer by lazy { AppContainer(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        SingletonImageLoader.setSafe { appContainer.imageLoader }
+        val systemBarColor = PhotoTubeColors.Background.toArgb()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(systemBarColor, systemBarColor),
+            navigationBarStyle = SystemBarStyle.light(systemBarColor, systemBarColor),
+        )
         setContent {
             PhotoTubeDroidTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                PhotoTubeApp(appContainer, this)
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    PhotoTubeDroidTheme {
-        Greeting("Android")
     }
 }
