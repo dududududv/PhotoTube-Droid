@@ -46,7 +46,6 @@ import com.yunai.phototube.data.timeline.TimelineRepository
 import com.yunai.phototube.ui.components.AlbumTopBar
 import com.yunai.phototube.ui.components.Android16HazeProvider
 import com.yunai.phototube.ui.components.DiagnosticErrorText
-import com.yunai.phototube.ui.components.FloatingAlbumDock
 import com.yunai.phototube.ui.components.rememberAndroid16HazeState
 import com.yunai.phototube.ui.photos.RemotePhotoCell
 import com.yunai.phototube.ui.photos.toTimelineError
@@ -160,18 +159,6 @@ private fun CreationScreen(
                 }
             }
 
-            FloatingAlbumDock(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                selectedItem = 2,
-                onItemClick = { index ->
-                    when (index) {
-                        0 -> onOpenPhotos()
-                        1 -> onOpenCollections()
-                    }
-                },
-                onLayoutClick = onToggleGridDensity,
-                onMenuClick = onToggleFavoriteOnly,
-            )
         }
     }
 }

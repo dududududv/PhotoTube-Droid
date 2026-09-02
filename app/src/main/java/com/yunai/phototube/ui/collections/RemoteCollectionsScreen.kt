@@ -75,7 +75,7 @@ fun RemoteCollectionsRoute(
     repository: AlbumRepository,
     onAlbumClick: (String) -> Unit,
     onOpenPhotos: () -> Unit,
-    onOpenCreation: () -> Unit,
+    onOpenAccount: () -> Unit,
     refreshRevision: Int,
     modifier: Modifier = Modifier,
 ) {
@@ -104,7 +104,7 @@ fun RemoteCollectionsRoute(
         error = state.error,
         onAlbumClick = onAlbumClick,
         onOpenPhotos = onOpenPhotos,
-        onOpenCreation = onOpenCreation,
+        onOpenAccount = onOpenAccount,
         onCreate = { showCreate = true },
         modifier = modifier,
     )
@@ -127,7 +127,7 @@ private fun RemoteCollectionsScreen(
     error: TimelineError?,
     onAlbumClick: (String) -> Unit,
     onOpenPhotos: () -> Unit,
-    onOpenCreation: () -> Unit,
+    onOpenAccount: () -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -153,11 +153,11 @@ private fun RemoteCollectionsScreen(
                 item {
                     Column(Modifier.statusBarsPadding()) {
                         Spacer(Modifier.height(20.dp))
-                        AlbumTopBar()
+                        AlbumTopBar(onProfileClick = onOpenAccount, showActions = false)
                         Spacer(Modifier.height(24.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("图集", style = MaterialTheme.typography.displayLarge)
+                                Text("相册", style = MaterialTheme.typography.displayLarge)
                                 Text("普通相册与路径相册", color = PhotoTubeColors.Muted)
                             }
                             IconButton(
@@ -206,13 +206,8 @@ private fun RemoteCollectionsScreen(
                 selectedItem = selectedDockItem,
                 onItemClick = {
                     selectedDockItem = it
-                    when (it) {
-                        0 -> onOpenPhotos()
-                        2 -> onOpenCreation()
-                    }
+                    if (it == 0) onOpenPhotos()
                 },
-                onLayoutClick = {},
-                onMenuClick = onCreate,
             )
         }
     }
@@ -282,7 +277,7 @@ private fun RemoteAlbumCard(album: Album, serverRoot: ServerRoot, onClick: () ->
         Text(album.name, style = MaterialTheme.typography.titleLarge)
         val syncLabel = album.pathSync?.let { summary ->
             when {
-                summary.lastRunState != null -> "${summary.enabledPathCount} 个目录 · ${summary.lastRunState.name}"
+                summary.lastRunState != null -> "${summary.enabledPathCount} 个目录 · ${syncStateLabel(summary.lastRunState)}"
                 else -> "${summary.enabledPathCount} 个目录 · 尚未扫描"
             }
         }
@@ -300,11 +295,11 @@ private fun RemoteEmptyAlbums(onCreate: () -> Unit) {
             .padding(vertical = 64.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("从一个图集开始", style = MaterialTheme.typography.headlineSmall)
+        Text("从一个相册开始", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(6.dp))
         Text("普通相册手工整理，路径相册由你明确扫描", color = PhotoTubeColors.Muted)
         Spacer(Modifier.height(20.dp))
-        Button(onClick = onCreate) { Text("新建图集") }
+        Button(onClick = onCreate) { Text("新建相册") }
     }
 }
 
@@ -330,7 +325,7 @@ private fun CreateAlbumSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("新建图集", style = MaterialTheme.typography.headlineSmall)
+            Text("新建相册", style = MaterialTheme.typography.headlineSmall)
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(120) },

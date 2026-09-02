@@ -78,7 +78,7 @@ fun CollectionsScreen(
             item {
                 Column(Modifier.statusBarsPadding()) {
                     Spacer(Modifier.height(20.dp))
-                    AlbumTopBar()
+                    AlbumTopBar(showActions = false)
                     Spacer(Modifier.height(24.dp))
                 }
             }
@@ -98,8 +98,6 @@ fun CollectionsScreen(
                 selectedDockItem = it
                 if (it == 0) onOpenPhotos()
             },
-            onLayoutClick = {},
-            onMenuClick = {},
         )
       }
     }

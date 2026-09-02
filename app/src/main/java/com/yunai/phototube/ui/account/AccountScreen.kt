@@ -2,6 +2,7 @@ package com.yunai.phototube.ui.account
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -32,6 +34,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -61,6 +64,15 @@ fun AccountRoute(
     isBusy: Boolean,
     error: UiError?,
     onBack: () -> Unit,
+    onOpenJobs: () -> Unit,
+    onOpenSystemStatus: () -> Unit,
+    onOpenArchived: () -> Unit,
+    onOpenPrivate: () -> Unit,
+    onOpenTrash: () -> Unit,
+    onOpenDuplicates: () -> Unit,
+    onOpenXmpExport: () -> Unit,
+    onOpenMemoryExclusions: () -> Unit,
+    onOpenTagManagement: () -> Unit,
     onLogout: () -> Unit,
     onSwitchServer: () -> Unit,
     modifier: Modifier = Modifier,
@@ -74,6 +86,15 @@ fun AccountRoute(
         isBusy = isBusy,
         error = error,
         onBack = onBack,
+        onOpenJobs = onOpenJobs,
+        onOpenSystemStatus = onOpenSystemStatus,
+        onOpenArchived = onOpenArchived,
+        onOpenPrivate = onOpenPrivate,
+        onOpenTrash = onOpenTrash,
+        onOpenDuplicates = onOpenDuplicates,
+        onOpenXmpExport = onOpenXmpExport,
+        onOpenMemoryExclusions = onOpenMemoryExclusions,
+        onOpenTagManagement = onOpenTagManagement,
         onRequestLogout = { confirmation = AccountConfirmation.Logout },
         onRequestSwitchServer = { confirmation = AccountConfirmation.SwitchServer },
         modifier = modifier,
@@ -102,6 +123,15 @@ private fun AccountScreen(
     isBusy: Boolean,
     error: UiError?,
     onBack: () -> Unit,
+    onOpenJobs: () -> Unit,
+    onOpenSystemStatus: () -> Unit,
+    onOpenArchived: () -> Unit,
+    onOpenPrivate: () -> Unit,
+    onOpenTrash: () -> Unit,
+    onOpenDuplicates: () -> Unit,
+    onOpenXmpExport: () -> Unit,
+    onOpenMemoryExclusions: () -> Unit,
+    onOpenTagManagement: () -> Unit,
     onRequestLogout: () -> Unit,
     onRequestSwitchServer: () -> Unit,
     modifier: Modifier,
@@ -120,7 +150,7 @@ private fun AccountScreen(
             IconButton(onClick = onBack, enabled = !isBusy) {
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回照片")
             }
-            Text("账号与服务器", style = MaterialTheme.typography.titleLarge)
+            Text("账号与管理", style = MaterialTheme.typography.titleLarge)
         }
 
         Column(
@@ -134,6 +164,41 @@ private fun AccountScreen(
             AccountIdentityCard(user)
             ServerCard(serverRoot)
             error?.let { SessionErrorCard(it) }
+            Text(
+                "后台与系统",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            ManagementCard(
+                entries = listOf(
+                    ManagementEntry(
+                        title = "任务中心",
+                        subtitle = "查看扫描、导入与后台处理进度",
+                        onClick = onOpenJobs,
+                    ),
+                    ManagementEntry(
+                        title = "系统状态与缓存",
+                        subtitle = "服务状态、异常与本机媒体缓存",
+                        onClick = onOpenSystemStatus,
+                    ),
+                ),
+            )
+            Text(
+                "照片库管理",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            ManagementCard(
+                entries = listOf(
+                    ManagementEntry("已归档", "查看已归档的照片", onOpenArchived),
+                    ManagementEntry("私密空间", "管理需要解锁的私密照片", onOpenPrivate),
+                    ManagementEntry("回收站", "恢复或彻底删除照片", onOpenTrash),
+                    ManagementEntry("完全重复项", "检查内容完全相同的照片", onOpenDuplicates),
+                    ManagementEntry("照片信息备份", "管理 XMP 信息导出", onOpenXmpExport),
+                    ManagementEntry("回忆屏蔽", "设置不参与回忆的日期与照片", onOpenMemoryExclusions),
+                    ManagementEntry("标签管理", "维护照片标签", onOpenTagManagement),
+                ),
+            )
             Text(
                 "会话操作",
                 style = MaterialTheme.typography.titleMedium,
@@ -177,6 +242,46 @@ private fun AccountScreen(
                 lineHeight = 18.sp,
             )
             Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+private data class ManagementEntry(
+    val title: String,
+    val subtitle: String,
+    val onClick: () -> Unit,
+)
+
+@Composable
+private fun ManagementCard(entries: List<ManagementEntry>) {
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        entries.forEachIndexed { index, entry ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = entry.onClick)
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(entry.title, fontWeight = FontWeight.SemiBold)
+                    Text(entry.subtitle, color = PhotoTubeColors.Muted, fontSize = 12.sp)
+                }
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = "进入${entry.title}",
+                    tint = PhotoTubeColors.Muted,
+                )
+            }
+            if (index < entries.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 18.dp),
+                    color = PhotoTubeColors.Hairline,
+                )
+            }
         }
     }
 }

@@ -25,9 +25,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,7 +49,6 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.paging.LoadState
@@ -66,7 +62,6 @@ import com.yunai.phototube.data.timeline.MediaAsset
 import com.yunai.phototube.data.timeline.ThumbnailSize
 import com.yunai.phototube.data.timeline.TimelineGranularity
 import com.yunai.phototube.data.timeline.TimelineRepository
-import com.yunai.phototube.data.home.HomeRepository
 import com.yunai.phototube.data.folder.FolderRepository
 import com.yunai.phototube.data.tag.TagRepository
 import com.yunai.phototube.data.timeline.AssetFilter
@@ -78,54 +73,33 @@ import com.yunai.phototube.ui.components.android16Glass
 import com.yunai.phototube.ui.components.rememberAndroid16HazeState
 import com.yunai.phototube.ui.theme.PhotoTubeColors
 import com.yunai.phototube.ui.theme.PhotoTubeDimens
-import com.yunai.phototube.ui.home.HomeFeedScreen
-import com.yunai.phototube.ui.home.HomeFeedViewModel
 import dev.chrisbanes.haze.hazeSource
 import java.time.OffsetDateTime
 
 @Composable
 fun RemotePhotoTimelineRoute(
     repository: TimelineRepository,
-    homeRepository: HomeRepository,
     folderRepository: FolderRepository,
     tagRepository: TagRepository,
     onOpenCollections: () -> Unit,
-    onOpenCreation: () -> Unit,
-    onOpenSearch: () -> Unit,
-    onOpenAsset: (String) -> Unit,
-    onOpenAlbum: (String) -> Unit,
-    onOpenArchived: () -> Unit,
-    onOpenPrivate: () -> Unit,
-    onOpenTrash: () -> Unit,
-    onOpenJobs: () -> Unit,
-    onOpenDuplicates: () -> Unit,
-    onOpenXmpExport: () -> Unit,
-    onOpenSystemStatus: () -> Unit,
-    onOpenMemoryExclusions: () -> Unit,
-    onOpenTagManagement: () -> Unit,
     onOpenAccount: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenAsset: (String, List<MediaAsset>) -> Unit,
     tagLibraryRevision: Int,
     deletedTagId: Long?,
     refreshRevision: Int,
     modifier: Modifier = Modifier,
 ) {
     val timelineViewModel: TimelineViewModel = viewModel(factory = TimelineViewModel.factory(repository))
-    val homeViewModel: HomeFeedViewModel = viewModel(
-        key = "home-feed",
-        factory = HomeFeedViewModel.factory(homeRepository),
-    )
     val filterViewModel: AdvancedFilterViewModel = viewModel(
         key = "advanced-filter",
         factory = AdvancedFilterViewModel.factory(folderRepository, tagRepository),
     )
     val summaryState by timelineViewModel.summaryState.collectAsStateWithLifecycle()
     val granularity by timelineViewModel.granularity.collectAsStateWithLifecycle()
-    val layoutMode by timelineViewModel.layoutMode.collectAsStateWithLifecycle()
     val activeFilter by timelineViewModel.filter.collectAsStateWithLifecycle()
     val filterState by filterViewModel.state.collectAsStateWithLifecycle()
-    val homeState by homeViewModel.state.collectAsStateWithLifecycle()
     val assets = timelineViewModel.assets.collectAsLazyPagingItems()
-    var showLibraryMenu by remember { mutableStateOf(false) }
     var showAdvancedFilter by remember { mutableStateOf(false) }
     val openAdvancedFilter = {
         filterViewModel.begin(activeFilter)
@@ -135,7 +109,6 @@ fun RemotePhotoTimelineRoute(
         if (refreshRevision > 0) {
             assets.refresh()
             timelineViewModel.refreshSummary()
-            homeViewModel.refresh()
         }
     }
     LaunchedEffect(tagLibraryRevision) {
@@ -144,90 +117,24 @@ fun RemotePhotoTimelineRoute(
             deletedTagId?.let(timelineViewModel::removeDeletedTag)
         }
     }
-    if (layoutMode == PhotoLayoutMode.TIMELINE) {
-        RemotePhotoTimelineScreen(
-            assets = assets,
-            serverRoot = timelineViewModel.serverRoot,
-            summaryState = summaryState,
-            granularity = granularity,
-            onGranularityChanged = timelineViewModel::setGranularity,
-            onRetrySummary = timelineViewModel::refreshSummary,
-            onOpenCollections = onOpenCollections,
-            onOpenCreation = onOpenCreation,
-            onOpenSearch = onOpenSearch,
-            onOpenFilter = openAdvancedFilter,
-            activeFilter = activeFilter,
-            onClearFilter = { timelineViewModel.applyFilter(AssetFilter()) },
-            onOpenAsset = onOpenAsset,
-            onSwitchLayout = timelineViewModel::toggleLayoutMode,
-            onOpenLibraryMenu = { showLibraryMenu = true },
-            modifier = modifier,
-        )
-    } else {
-        HomeFeedScreen(
-            state = homeState,
-            serverRoot = homeViewModel.serverRoot,
-            onRetry = homeViewModel::refresh,
-            onOpenSearch = onOpenSearch,
-            onOpenFilter = {
-                timelineViewModel.toggleLayoutMode()
-                openAdvancedFilter()
-            },
-            onOpenCollections = onOpenCollections,
-            onOpenCreation = onOpenCreation,
-            onOpenAsset = onOpenAsset,
-            onOpenAlbum = onOpenAlbum,
-            onOpenJobs = onOpenJobs,
-            onSwitchLayout = timelineViewModel::toggleLayoutMode,
-            onOpenLibraryMenu = { showLibraryMenu = true },
-            modifier = modifier,
-        )
-    }
-    if (showLibraryMenu) {
-        LibraryMenuSheet(
-            onDismiss = { showLibraryMenu = false },
-            onOpenArchived = {
-                showLibraryMenu = false
-                onOpenArchived()
-            },
-            onOpenPrivate = {
-                showLibraryMenu = false
-                onOpenPrivate()
-            },
-            onOpenTrash = {
-                showLibraryMenu = false
-                onOpenTrash()
-            },
-            onOpenJobs = {
-                showLibraryMenu = false
-                onOpenJobs()
-            },
-            onOpenDuplicates = {
-                showLibraryMenu = false
-                onOpenDuplicates()
-            },
-            onOpenXmpExport = {
-                showLibraryMenu = false
-                onOpenXmpExport()
-            },
-            onOpenSystemStatus = {
-                showLibraryMenu = false
-                onOpenSystemStatus()
-            },
-            onOpenMemoryExclusions = {
-                showLibraryMenu = false
-                onOpenMemoryExclusions()
-            },
-            onOpenTagManagement = {
-                showLibraryMenu = false
-                onOpenTagManagement()
-            },
-            onOpenAccount = {
-                showLibraryMenu = false
-                onOpenAccount()
-            },
-        )
-    }
+    RemotePhotoTimelineScreen(
+        assets = assets,
+        serverRoot = timelineViewModel.serverRoot,
+        summaryState = summaryState,
+        granularity = granularity,
+        onGranularityChanged = timelineViewModel::setGranularity,
+        onRetrySummary = timelineViewModel::refreshSummary,
+        onOpenCollections = onOpenCollections,
+        onOpenAccount = onOpenAccount,
+        onOpenSearch = onOpenSearch,
+        onOpenFilter = openAdvancedFilter,
+        activeFilter = activeFilter,
+        onClearFilter = { timelineViewModel.applyFilter(AssetFilter()) },
+        onOpenAsset = { assetId ->
+            onOpenAsset(assetId, assets.itemSnapshotList.items)
+        },
+        modifier = modifier,
+    )
     if (showAdvancedFilter) {
         AdvancedFilterSheet(
             state = filterState,
@@ -252,14 +159,12 @@ private fun RemotePhotoTimelineScreen(
     onGranularityChanged: (TimelineGranularity) -> Unit,
     onRetrySummary: () -> Unit,
     onOpenCollections: () -> Unit,
-    onOpenCreation: () -> Unit,
+    onOpenAccount: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenFilter: () -> Unit,
     activeFilter: AssetFilter,
     onClearFilter: () -> Unit,
     onOpenAsset: (String) -> Unit,
-    onSwitchLayout: () -> Unit,
-    onOpenLibraryMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hazeState = rememberAndroid16HazeState()
@@ -292,12 +197,12 @@ private fun RemotePhotoTimelineScreen(
                     Column(Modifier.statusBarsPadding()) {
                         Spacer(Modifier.height(20.dp))
                         AlbumTopBar(
-                            onProfileClick = onOpenCollections,
+                            onProfileClick = onOpenAccount,
                             onSearchClick = onOpenSearch,
                             onFilterClick = onOpenFilter,
                             filterActive = activeFilter.toAdvancedFilterDraft().activeDimensionCount > 0,
                         )
-                        Spacer(Modifier.height(30.dp))
+                        Spacer(Modifier.height(16.dp))
                         RemoteTimelineHeading(
                             assets = assets,
                             granularity = granularity,
@@ -307,7 +212,7 @@ private fun RemotePhotoTimelineScreen(
                         if (activeCount > 0) {
                             ActiveFilterSummary(activeCount, onOpenFilter, onClearFilter)
                         }
-                        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(6.dp))
                     }
                 }
 
@@ -364,13 +269,8 @@ private fun RemotePhotoTimelineScreen(
                 selectedItem = selectedDockItem,
                 onItemClick = { index ->
                     selectedDockItem = index
-                    when (index) {
-                        1 -> onOpenCollections()
-                        2 -> onOpenCreation()
-                    }
+                    if (index == 1) onOpenCollections()
                 },
-                onLayoutClick = onSwitchLayout,
-                onMenuClick = onOpenLibraryMenu,
             )
         }
     }
@@ -392,64 +292,6 @@ private fun ActiveFilterSummary(count: Int, onOpenFilter: () -> Unit, onClearFil
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun LibraryMenuSheet(
-    onDismiss: () -> Unit,
-    onOpenArchived: () -> Unit,
-    onOpenPrivate: () -> Unit,
-    onOpenTrash: () -> Unit,
-    onOpenJobs: () -> Unit,
-    onOpenDuplicates: () -> Unit,
-    onOpenXmpExport: () -> Unit,
-    onOpenSystemStatus: () -> Unit,
-    onOpenMemoryExclusions: () -> Unit,
-    onOpenTagManagement: () -> Unit,
-    onOpenAccount: () -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("照片库", style = MaterialTheme.typography.headlineSmall)
-            FilledTonalButton(onClick = onOpenArchived, modifier = Modifier.fillMaxWidth()) {
-                Text("已归档")
-            }
-            FilledTonalButton(onClick = onOpenPrivate, modifier = Modifier.fillMaxWidth()) {
-                Text("私密空间")
-            }
-            FilledTonalButton(onClick = onOpenTrash, modifier = Modifier.fillMaxWidth()) {
-                Text("回收站")
-            }
-            FilledTonalButton(onClick = onOpenJobs, modifier = Modifier.fillMaxWidth()) {
-                Text("任务中心")
-            }
-            FilledTonalButton(onClick = onOpenDuplicates, modifier = Modifier.fillMaxWidth()) {
-                Text("完全重复项")
-            }
-            FilledTonalButton(onClick = onOpenXmpExport, modifier = Modifier.fillMaxWidth()) {
-                Text("照片信息备份")
-            }
-            FilledTonalButton(onClick = onOpenMemoryExclusions, modifier = Modifier.fillMaxWidth()) {
-                Text("回忆屏蔽")
-            }
-            FilledTonalButton(onClick = onOpenTagManagement, modifier = Modifier.fillMaxWidth()) {
-                Text("标签管理")
-            }
-            FilledTonalButton(onClick = onOpenSystemStatus, modifier = Modifier.fillMaxWidth()) {
-                Text("系统状态与缓存")
-            }
-            FilledTonalButton(onClick = onOpenAccount, modifier = Modifier.fillMaxWidth()) {
-                Text("账号与服务器")
-            }
-        }
-    }
-}
-
 @Composable
 private fun RemoteTimelineHeading(
     assets: LazyPagingItems<MediaAsset>,
@@ -463,24 +305,27 @@ private fun RemoteTimelineHeading(
             "${date.year}年${date.monthValue}月"
         }.getOrNull()
     } ?: "时间轴"
-    Column {
-        Text("照片", style = MaterialTheme.typography.displayLarge, color = PhotoTubeColors.Ink)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Text(
+                "照片",
+                color = PhotoTubeColors.Ink,
+                fontSize = 36.sp,
+                lineHeight = 42.sp,
+                fontWeight = FontWeight.Bold,
+            )
             Text(
                 text = monthLabel,
                 color = PhotoTubeColors.Muted,
-                fontSize = 20.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(1f),
-            )
-            TimelineGranularityPicker(
-                selected = granularity,
-                onSelected = onGranularityChanged,
             )
         }
+        TimelineGranularityPicker(
+            selected = granularity,
+            onSelected = onGranularityChanged,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
     }
 }
 
@@ -488,6 +333,7 @@ private fun RemoteTimelineHeading(
 private fun TimelineGranularityPicker(
     selected: TimelineGranularity,
     onSelected: (TimelineGranularity) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val options = listOf(
         TimelineGranularity.YEAR to "年",
@@ -495,53 +341,59 @@ private fun TimelineGranularityPicker(
         TimelineGranularity.DAY to "日",
     )
     val selectedIndex = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
-    val controlWidth = 196.dp
-    val controlHeight = 52.dp
-    val inset = 3.dp
-    val segmentWidth = (controlWidth - inset * 2) / 3
+    val controlWidth = 144.dp
+    val touchHeight = 48.dp
+    val visualHeight = 40.dp
+    val inset = 2.dp
+    val segmentWidth = controlWidth / 3
     val indicatorOffset by animateDpAsState(
         targetValue = segmentWidth * selectedIndex,
         animationSpec = spring(dampingRatio = 0.82f, stiffness = 430f),
         label = "时间粒度滑块",
     )
     Box(
-        modifier = Modifier
-            .size(controlWidth, controlHeight)
-            .shadow(
-                elevation = 7.dp,
-                shape = RoundedCornerShape(26.dp),
-                ambientColor = Color.Black.copy(alpha = 0.04f),
-                spotColor = Color.Black.copy(alpha = 0.06f),
-            )
-            .android16Glass(cornerRadius = 26.dp, strength = 0.78f, showBorder = false)
-            .background(
-                Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.50f),
-                    1f to Color.White.copy(alpha = 0.34f),
-                ),
-                RoundedCornerShape(26.dp),
-            )
-            .padding(inset),
+        modifier = modifier
+            .size(controlWidth, touchHeight),
     ) {
         Box(
             modifier = Modifier
-                .offset { IntOffset(indicatorOffset.roundToPx(), 0) }
-                .size(segmentWidth, controlHeight - inset * 2)
+                .align(Alignment.Center)
+                .size(controlWidth, visualHeight)
                 .shadow(
-                    elevation = 3.dp,
-                    shape = RoundedCornerShape(23.dp),
-                    ambientColor = Color.Black.copy(alpha = 0.03f),
-                    spotColor = Color.Black.copy(alpha = 0.05f),
+                    elevation = 2.dp,
+                    shape = RoundedCornerShape(20.dp),
+                    ambientColor = Color.Black.copy(alpha = 0.02f),
+                    spotColor = Color.Black.copy(alpha = 0.035f),
                 )
-                .background(Color.White.copy(alpha = 0.88f), RoundedCornerShape(23.dp)),
+                .android16Glass(cornerRadius = 20.dp, strength = 0.78f, showBorder = false)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.50f),
+                        1f to Color.White.copy(alpha = 0.34f),
+                    ),
+                    RoundedCornerShape(20.dp),
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = indicatorOffset + inset)
+                .size(segmentWidth - inset * 2, visualHeight - inset * 2)
+                .shadow(
+                    elevation = 2.dp,
+                    shape = RoundedCornerShape(18.dp),
+                    ambientColor = Color.Black.copy(alpha = 0.025f),
+                    spotColor = Color.Black.copy(alpha = 0.04f),
+                )
+                .background(Color.White.copy(alpha = 0.88f), RoundedCornerShape(18.dp)),
         )
         Row {
             options.forEachIndexed { index, (value, label) ->
                 val isSelected = index == selectedIndex
                 Box(
                     modifier = Modifier
-                        .size(segmentWidth, controlHeight - inset * 2)
-                        .clip(RoundedCornerShape(23.dp))
+                        .size(segmentWidth, touchHeight)
+                        .clip(RoundedCornerShape(24.dp))
                         .semantics {
                             contentDescription = "按${label}分组"
                             this.selected = isSelected
@@ -552,7 +404,7 @@ private fun TimelineGranularityPicker(
                     Text(
                         label,
                         color = if (isSelected) PhotoTubeColors.Ink else PhotoTubeColors.Muted,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                     )
                 }
@@ -566,7 +418,7 @@ private fun TimelineGroupHeader(group: LoadedTimelineGroup) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 22.dp, bottom = 8.dp),
+            .padding(top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -595,9 +447,9 @@ private fun EditorialPhotoRow(
     onOpenAsset: (String) -> Unit,
 ) {
     val height = when (row.style) {
-        EditorialRowStyle.FEATURED -> 150.dp
-        EditorialRowStyle.TRIPLE -> 152.dp
-        EditorialRowStyle.DOUBLE -> 136.dp
+        EditorialRowStyle.FEATURED -> 142.dp
+        EditorialRowStyle.TRIPLE -> 144.dp
+        EditorialRowStyle.DOUBLE -> 128.dp
     }
     Row(
         modifier = Modifier

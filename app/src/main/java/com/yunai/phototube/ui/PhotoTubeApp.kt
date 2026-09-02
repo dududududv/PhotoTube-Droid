@@ -31,7 +31,6 @@ import com.yunai.phototube.ui.auth.ServerSetupScreen
 import com.yunai.phototube.ui.account.AccountRoute
 import com.yunai.phototube.ui.collections.AlbumDetailRoute
 import com.yunai.phototube.ui.collections.RemoteCollectionsRoute
-import com.yunai.phototube.ui.creation.CreationRoute
 import com.yunai.phototube.ui.photos.RemotePhotoTimelineRoute
 import com.yunai.phototube.ui.library.LibraryAssetsRoute
 import com.yunai.phototube.ui.library.LibraryCollectionMode
@@ -47,6 +46,7 @@ import com.yunai.phototube.ui.system.SystemStatusRoute
 import com.yunai.phototube.ui.tags.TagLibraryChangeKind
 import com.yunai.phototube.ui.tags.TagManagementRoute
 import com.yunai.phototube.ui.theme.PhotoTubeColors
+import com.yunai.phototube.data.timeline.MediaAsset
 import kotlinx.coroutines.launch
 
 @Composable
@@ -103,7 +103,6 @@ fun PhotoTubeApp(appContainer: AppContainer, hostActivity: Activity) {
 internal enum class ContentDestination {
     Photos,
     Collections,
-    Creation,
     AlbumDetail,
     Archived,
     Private,
@@ -129,11 +128,13 @@ private fun AuthenticatedPhotoTubeApp(
 ) {
     var destination by rememberSaveable { mutableStateOf(ContentDestination.Photos) }
     var selectedAssetId by rememberSaveable { mutableStateOf<String?>(null) }
+    var viewerAssets by remember { mutableStateOf<List<MediaAsset>>(emptyList()) }
     var selectedAlbumId by rememberSaveable { mutableStateOf<String?>(null) }
     var albumReturnDestination by rememberSaveable { mutableStateOf(ContentDestination.Collections) }
     var viewerReturnDestination by rememberSaveable { mutableStateOf(ContentDestination.Photos) }
     var jobsReturnDestination by rememberSaveable { mutableStateOf(ContentDestination.Photos) }
     var searchReturnDestination by rememberSaveable { mutableStateOf(ContentDestination.Photos) }
+    var accountReturnDestination by rememberSaveable { mutableStateOf(ContentDestination.Photos) }
     var timelineRefreshRevision by rememberSaveable { mutableIntStateOf(0) }
     var collectionsRefreshRevision by rememberSaveable { mutableIntStateOf(0) }
     var albumDetailRefreshRevision by rememberSaveable { mutableIntStateOf(0) }
@@ -216,7 +217,6 @@ private fun AuthenticatedPhotoTubeApp(
                 albumReturnDestination
             }
             ContentDestination.Photos -> ContentDestination.Collections
-            ContentDestination.Creation -> ContentDestination.Photos
             ContentDestination.Archived,
             ContentDestination.Private,
             ContentDestination.Trash,
@@ -224,12 +224,12 @@ private fun AuthenticatedPhotoTubeApp(
             ContentDestination.SystemStatus,
             ContentDestination.MemoryExclusions,
             ContentDestination.TagManagement,
-            ContentDestination.Account,
-            -> ContentDestination.Photos
+            -> ContentDestination.Account
+            ContentDestination.Account -> accountReturnDestination
             ContentDestination.Jobs -> jobsReturnDestination
             ContentDestination.Duplicates -> {
                 duplicatesPrivateScope = false
-                ContentDestination.Photos
+                ContentDestination.Account
             }
             ContentDestination.Search -> searchReturnDestination
             ContentDestination.Collections -> ContentDestination.Collections
@@ -239,39 +239,24 @@ private fun AuthenticatedPhotoTubeApp(
     when (destination) {
         ContentDestination.Photos -> RemotePhotoTimelineRoute(
             repository = appContainer.timelineRepository,
-            homeRepository = appContainer.homeRepository,
             folderRepository = appContainer.folderRepository,
             tagRepository = appContainer.tagRepository,
             onOpenCollections = { destination = ContentDestination.Collections },
-            onOpenCreation = { destination = ContentDestination.Creation },
+            onOpenAccount = {
+                accountReturnDestination = ContentDestination.Photos
+                destination = ContentDestination.Account
+            },
             onOpenSearch = {
                 searchReturnDestination = ContentDestination.Photos
                 destination = ContentDestination.Search
             },
-            onOpenAsset = { assetId ->
+            onOpenAsset = { assetId, assets ->
                 selectedAssetId = assetId
+                viewerAssets = assets
                 viewerReturnDestination = ContentDestination.Photos
                 destination = ContentDestination.Viewer
             },
-            onOpenAlbum = { albumId ->
-                selectedAlbumId = albumId
-                albumReturnDestination = ContentDestination.Photos
-                destination = ContentDestination.AlbumDetail
-            },
             refreshRevision = timelineRefreshRevision,
-            onOpenArchived = { destination = ContentDestination.Archived },
-            onOpenPrivate = { destination = ContentDestination.Private },
-            onOpenTrash = { destination = ContentDestination.Trash },
-            onOpenJobs = {
-                jobsReturnDestination = ContentDestination.Photos
-                destination = ContentDestination.Jobs
-            },
-            onOpenDuplicates = { destination = ContentDestination.Duplicates },
-            onOpenXmpExport = { destination = ContentDestination.XmpExport },
-            onOpenSystemStatus = { destination = ContentDestination.SystemStatus },
-            onOpenMemoryExclusions = { destination = ContentDestination.MemoryExclusions },
-            onOpenTagManagement = { destination = ContentDestination.TagManagement },
-            onOpenAccount = { destination = ContentDestination.Account },
             tagLibraryRevision = tagLibraryRevision,
             deletedTagId = deletedTagId,
         )
@@ -283,23 +268,11 @@ private fun AuthenticatedPhotoTubeApp(
                 destination = ContentDestination.AlbumDetail
             },
             onOpenPhotos = { destination = ContentDestination.Photos },
-            onOpenCreation = { destination = ContentDestination.Creation },
+            onOpenAccount = {
+                accountReturnDestination = ContentDestination.Collections
+                destination = ContentDestination.Account
+            },
             refreshRevision = collectionsRefreshRevision,
-        )
-        ContentDestination.Creation -> CreationRoute(
-            repository = appContainer.timelineRepository,
-            refreshRevision = timelineRefreshRevision,
-            onOpenPhotos = { destination = ContentDestination.Photos },
-            onOpenCollections = { destination = ContentDestination.Collections },
-            onOpenSearch = {
-                searchReturnDestination = ContentDestination.Creation
-                destination = ContentDestination.Search
-            },
-            onOpenAsset = { assetId ->
-                selectedAssetId = assetId
-                viewerReturnDestination = ContentDestination.Creation
-                destination = ContentDestination.Viewer
-            },
         )
         ContentDestination.AlbumDetail -> {
             val albumId = selectedAlbumId
@@ -326,6 +299,7 @@ private fun AuthenticatedPhotoTubeApp(
                     },
                     onOpenAsset = { assetId ->
                         selectedAssetId = assetId
+                        viewerAssets = emptyList()
                         viewerReturnDestination = ContentDestination.AlbumDetail
                         destination = ContentDestination.Viewer
                     },
@@ -348,10 +322,11 @@ private fun AuthenticatedPhotoTubeApp(
                 refreshRevision = libraryRefreshRevision,
                 onBack = {
                     timelineRefreshRevision += 1
-                    destination = ContentDestination.Photos
+                    destination = ContentDestination.Account
                 },
                 onOpenAsset = { assetId ->
                     selectedAssetId = assetId
+                    viewerAssets = emptyList()
                     viewerReturnDestination = destination
                     destination = ContentDestination.Viewer
                 },
@@ -360,9 +335,10 @@ private fun AuthenticatedPhotoTubeApp(
         ContentDestination.Trash -> TrashRoute(
             model = trashViewModel,
             refreshRevision = trashRefreshRevision,
-            onBack = { destination = ContentDestination.Photos },
+            onBack = { destination = ContentDestination.Account },
             onOpenAsset = { assetId ->
                 selectedAssetId = assetId
+                viewerAssets = emptyList()
                 viewerReturnDestination = ContentDestination.Trash
                 destination = ContentDestination.Viewer
             },
@@ -378,10 +354,11 @@ private fun AuthenticatedPhotoTubeApp(
             onPrivateScopeChanged = { duplicatesPrivateScope = it },
             onBack = {
                 duplicatesPrivateScope = false
-                destination = ContentDestination.Photos
+                destination = ContentDestination.Account
             },
             onOpenAsset = { assetId ->
                 selectedAssetId = assetId
+                viewerAssets = emptyList()
                 viewerReturnDestination = ContentDestination.Duplicates
                 destination = ContentDestination.Viewer
             },
@@ -392,6 +369,7 @@ private fun AuthenticatedPhotoTubeApp(
             onBack = { destination = searchReturnDestination },
             onOpenAsset = { assetId ->
                 selectedAssetId = assetId
+                viewerAssets = emptyList()
                 viewerReturnDestination = ContentDestination.Search
                 destination = ContentDestination.Viewer
             },
@@ -402,12 +380,12 @@ private fun AuthenticatedPhotoTubeApp(
             onPrivateScopeChanged = { xmpPrivateScope = it },
             onBack = {
                 xmpPrivateScope = false
-                destination = ContentDestination.Photos
+                destination = ContentDestination.Account
             },
         )
         ContentDestination.SystemStatus -> SystemStatusRoute(
             repository = appContainer.systemRepository,
-            onBack = { destination = ContentDestination.Photos },
+            onBack = { destination = ContentDestination.Account },
             onOpenJobs = {
                 jobsReturnDestination = ContentDestination.SystemStatus
                 destination = ContentDestination.Jobs
@@ -415,13 +393,13 @@ private fun AuthenticatedPhotoTubeApp(
         )
         ContentDestination.MemoryExclusions -> MemoryExclusionRoute(
             repository = appContainer.memoryExclusionRepository,
-            onBack = { destination = ContentDestination.Photos },
+            onBack = { destination = ContentDestination.Account },
             onHomeChanged = { timelineRefreshRevision += 1 },
         )
         ContentDestination.TagManagement -> TagManagementRoute(
             repository = appContainer.tagRepository,
             refreshRevision = tagLibraryRevision,
-            onBack = { destination = ContentDestination.Photos },
+            onBack = { destination = ContentDestination.Account },
             onChanged = { change ->
                 tagLibraryRevision += 1
                 deletedTagId = change.tagId.takeIf { change.kind == TagLibraryChangeKind.DELETED }
@@ -438,7 +416,19 @@ private fun AuthenticatedPhotoTubeApp(
             serverRoot = requireNotNull(appState.serverRoot) { "认证内容区缺少服务器地址" },
             isBusy = appState.isBusy,
             error = appState.error,
-            onBack = { destination = ContentDestination.Photos },
+            onBack = { destination = accountReturnDestination },
+            onOpenJobs = {
+                jobsReturnDestination = ContentDestination.Account
+                destination = ContentDestination.Jobs
+            },
+            onOpenSystemStatus = { destination = ContentDestination.SystemStatus },
+            onOpenArchived = { destination = ContentDestination.Archived },
+            onOpenPrivate = { destination = ContentDestination.Private },
+            onOpenTrash = { destination = ContentDestination.Trash },
+            onOpenDuplicates = { destination = ContentDestination.Duplicates },
+            onOpenXmpExport = { destination = ContentDestination.XmpExport },
+            onOpenMemoryExclusions = { destination = ContentDestination.MemoryExclusions },
+            onOpenTagManagement = { destination = ContentDestination.TagManagement },
             onLogout = onLogout,
             onSwitchServer = onSwitchServer,
         )
@@ -449,6 +439,7 @@ private fun AuthenticatedPhotoTubeApp(
             } else {
                 AssetViewerRoute(
                     assetId = assetId,
+                    stripAssets = viewerAssets,
                     repository = appContainer.assetRepository,
                     editRepository = appContainer.editRepository,
                     tagRepository = appContainer.tagRepository,
@@ -456,6 +447,7 @@ private fun AuthenticatedPhotoTubeApp(
                     httpClient = appContainer.serviceFactory.sharedHttpClient,
                     refreshRevision = tagLibraryRevision,
                     onPrivateAssetVisibilityChanged = { viewerAssetPrivate = it },
+                    onSelectAsset = { selectedAssetId = it },
                     onBack = { changes ->
                         viewerAssetPrivate = null
                         invalidateAssetConsumers(changes)

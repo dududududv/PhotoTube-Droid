@@ -183,11 +183,13 @@ MainActivity → AppContainer → SessionRepository → Retrofit / OkHttp / Cook
 
 资产查看器只保留一个 ViewModel。每次有效打开都会推进 request generation，并在提交请求时同时捕获目标 ID 与 generation；旧请求晚到不能覆盖新资产或同资产的新 revision。标签 mutation 在挂起前固化目标 ID，私密解锁还使用独立 attempt generation，因此关闭口令框或切换资产后不会续接旧 mutation。编辑完成事件携带 asset ID，资产 A 的保存、切换版本或冲突刷新不能更新资产 B。收藏或标签变化后返回时间线会建立新 Paging generation 并刷新摘要。
 
+全部照片路由打开查看器时，会附带当前 `LazyPagingItems.itemSnapshotList.items` 作为只读胶片快照；查看器不额外制造第二条分页流。胶片切换只改变根级 `selectedAssetId`，详情 ViewModel 仍按资产 generation 重新读取权威数据。切图前把当前资产的 `AssetChangeKind` 合并到 route 级集合，退出时再与最后一张资产的变更求并集，避免连续浏览丢失前序刷新语义。其它来源尚未提供稳定上下文时只显示当前资产，不复制缩略图伪造相邻项。
+
 编辑状态与普通详情写操作分离：`AssetEditViewModel` 只持有当前照片的服务端历史、激活摘要、基线配方和瞬时草稿。初次读取会继续沿不透明 cursor 查找当前激活版本；追加 cursor 失效时从第一页重建，重复 cursor 被视为契约错误。保存新版本同时提交 `expectedActiveEditVersionId` 与 `sourceContentHash`，切换历史提交当前/目标两个版本 ID；`409` 后读取最新资产和历史，并请求查看器刷新，禁止最后写赢。
 
 编辑版本是不可变事实。切回原图只把 `activeEdit` 设为 `null`，不删除历史；`sourceState=STALE` 的配方仍可审阅但不能激活。草稿只存在于编辑 ViewModel，退出或切换历史前必须确认，不写 Room 或本地文件。
 
-底栏创作页只负责选择编辑目标，不复制编辑状态。`CreationViewModel` 用全部/收藏布尔值换代固定照片 `AssetFilter`，Pager 仍由 `TimelineRepository` 创建；点击后根导航把 `viewerReturnDestination` 设为 `Creation`，查看器返回时消费统一资产变更集合。搜索也保存独立 `searchReturnDestination`，因此从创作发起搜索不会错误回到照片时间线。
+非破坏性编辑统一从资产查看器进入，根导航不再注册独立 `Creation` 目的地。`CreationViewModel` 与对应页面代码暂保留为非路由回归模块，但不能重新接到底部一级导航；若未来恢复选片工作流，必须通过照片页中的明确操作入口进入，并重新定义返回目标。
 
 首页 `/home` 是有界聚合快照，但它同时消费多种资产失效。`HomeFeedViewModel` 通过 `HomeFeedGateway` 隔离数据源，并为每次刷新分配单调 generation；新的根级 revision 会取消旧 Job 并立即启动新请求，而不是因旧请求活跃而丢弃。成功和失败都必须命中当前 generation 才能写入 StateFlow，因此不合作的旧网络回调也不能复活变更前首页。
 
@@ -231,7 +233,7 @@ XMP 私密范围仍以服务端 session 为唯一授权事实。开启私密范�
 
 时间线列表仍保持服务端 `(takenAt DESC, id DESC)` 顺序。`TimelineGrouping` 只对当前 Paging snapshot 做稳定分段，不二次排序；分组日期直接取 `takenAt` 自带 offset，避免手机时区让边界附近资产跨日。日粒度组内以 `2 + 3 + 2` 为首个编辑式节奏，后续在三等分与双等分之间循环；单张使用满宽行。
 
-底栏左侧动作只切换 `PhotoLayoutMode.TIMELINE/OVERVIEW`，不改变根导航的“照片”目的地。`HomeFeedViewModel` 通过独立 `HomeRepository` 读取 `/home`，不用本地聚合代替服务端口径。首页打开图集时，根导航记录 `albumReturnDestination=Photos`，返回时恢复原首页布局；从图集列表打开则返回 `Collections`。
+底部根导航只允许 `Photos` 与 `Collections` 两个目的地。头像进入 `Account`，根级 `accountReturnDestination` 记录来源主页面；任务、系统状态、归档、私密、回收站、重复项、XMP、回忆屏蔽与标签管理都从账号管理页进入，返回时先回账号管理页。`jobsReturnDestination` 继续保证从系统告警进入任务中心后返回系统页。`HomeFeedViewModel` 与 `/home` 聚合仍保留在数据层，但不占用底部一级导航。
 
 ## 会话状态流
 

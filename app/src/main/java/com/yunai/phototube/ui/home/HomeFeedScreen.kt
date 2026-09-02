@@ -108,13 +108,8 @@ fun HomeFeedScreen(
                 modifier = Modifier.align(Alignment.BottomCenter),
                 selectedItem = 0,
                 onItemClick = { index ->
-                    when (index) {
-                        1 -> onOpenCollections()
-                        2 -> onOpenCreation()
-                    }
+                    if (index == 1) onOpenCollections()
                 },
-                onLayoutClick = onSwitchLayout,
-                onMenuClick = onOpenLibraryMenu,
             )
         }
     }

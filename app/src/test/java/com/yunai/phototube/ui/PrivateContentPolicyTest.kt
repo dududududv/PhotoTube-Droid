@@ -18,7 +18,6 @@ class PrivateContentPolicyTest {
     fun viewerProtectsPrivateAssetRegardlessOfItsEntryPage() {
         listOf(
             ContentDestination.Photos,
-            ContentDestination.Creation,
             ContentDestination.AlbumDetail,
             ContentDestination.Archived,
             ContentDestination.Trash,

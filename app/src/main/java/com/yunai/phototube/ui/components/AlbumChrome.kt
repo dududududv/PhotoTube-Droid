@@ -7,7 +7,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,7 +39,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -56,6 +54,7 @@ fun AlbumTopBar(
     onSearchClick: () -> Unit = {},
     onFilterClick: () -> Unit = {},
     filterActive: Boolean = false,
+    showActions: Boolean = true,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -71,9 +70,11 @@ fun AlbumTopBar(
             contentScale = ContentScale.Crop,
         )
         Spacer(Modifier.weight(1f))
-        CircleIconButton(AppIconKind.Search, "搜索", onSearchClick)
-        Spacer(Modifier.width(10.dp))
-        CircleIconButton(AppIconKind.Filter, "筛选", onFilterClick, showIndicator = filterActive)
+        if (showActions) {
+            CircleIconButton(AppIconKind.Search, "搜索", onSearchClick)
+            Spacer(Modifier.width(10.dp))
+            CircleIconButton(AppIconKind.Filter, "筛选", onFilterClick, showIndicator = filterActive)
+        }
     }
 }
 
@@ -110,16 +111,13 @@ fun FloatingAlbumDock(
     modifier: Modifier = Modifier,
     selectedItem: Int = 0,
     onItemClick: (Int) -> Unit,
-    onLayoutClick: () -> Unit,
-    onMenuClick: () -> Unit,
 ) {
-    val actionTouchSize = 48.dp
-    val actionVisualSize = 36.dp
-    val controlWidth = 242.dp
-    val controlHeight = 24.dp
-    val controlPadding = 1.dp
-    val segmentWidth = controlWidth / 3
-    val selectedIndex = selectedItem.coerceIn(0, 2)
+    val controlWidth = 224.dp
+    val touchHeight = 56.dp
+    val controlHeight = 52.dp
+    val controlPadding = 4.dp
+    val segmentWidth = controlWidth / 2
+    val selectedIndex = selectedItem.coerceIn(0, 1)
     val stepPx = with(LocalDensity.current) { segmentWidth.toPx() }
     val indicatorInsetPx = with(LocalDensity.current) { controlPadding.toPx() }
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
@@ -132,173 +130,112 @@ fun FloatingAlbumDock(
         label = "底部文字导航滑块位置",
     )
     val indicatorOffsetPx = (animatedBaseOffsetPx + dragOffsetPx)
-        .coerceIn(0f, stepPx * 2f)
+        .coerceIn(0f, stepPx)
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        DockActionButton(
-            kind = AppIconKind.Grid,
-            contentDescription = "切换照片布局",
-            touchSize = actionTouchSize,
-            visualSize = actionVisualSize,
-            onClick = onLayoutClick,
-        )
-
-        Box(
-            modifier = Modifier
-                .size(width = controlWidth, height = actionTouchSize)
-                .pointerInput(selectedIndex, stepPx) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { dragOffsetPx = 0f },
-                        onDragCancel = { dragOffsetPx = 0f },
-                        onDragEnd = {
-                            val threshold = stepPx * 0.24f
-                            val target = when {
-                                dragOffsetPx < -threshold -> selectedIndex - 1
-                                dragOffsetPx > threshold -> selectedIndex + 1
-                                else -> selectedIndex
-                            }.coerceIn(0, 2)
-                            dragOffsetPx = 0f
-                            if (target != selectedIndex) onItemClick(target)
-                        },
-                    ) { change, dragAmount ->
-                        change.consume()
-                        dragOffsetPx = (dragOffsetPx + dragAmount)
-                            .coerceIn(-selectedIndex * stepPx, (2 - selectedIndex) * stepPx)
-                    }
-                },
-        ) {
-            val labels = listOf("照片", "图集", "创作")
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(width = controlWidth, height = controlHeight)
-                    .shadow(
-                        elevation = 0.5.dp,
-                        shape = RoundedCornerShape(controlHeight / 2),
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.018f),
-                        spotColor = Color.Black.copy(alpha = 0.028f),
-                    )
-                    .android16Glass(
-                        cornerRadius = controlHeight / 2,
-                        strength = 0.91f,
-                        showBorder = false,
-                    )
-                    .background(
-                        brush = Brush.verticalGradient(
-                            0f to Color.White.copy(alpha = 0.38f),
-                            1f to Color.White.copy(alpha = 0.26f),
-                        ),
-                        shape = RoundedCornerShape(controlHeight / 2),
-                    ),
-            )
-
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .offset {
-                        IntOffset(
-                            x = (indicatorOffsetPx + indicatorInsetPx).roundToInt(),
-                            y = 0,
-                        )
-                    }
-                    .size(
-                        width = segmentWidth - controlPadding * 2,
-                        height = controlHeight - controlPadding * 2,
-                    )
-                    .shadow(
-                        elevation = 0.5.dp,
-                        shape = RoundedCornerShape((controlHeight - controlPadding * 2) / 2),
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.016f),
-                        spotColor = Color.Black.copy(alpha = 0.024f),
-                    )
-                    .background(
-                        brush = Brush.verticalGradient(
-                            0f to Color.White.copy(alpha = 0.90f),
-                            1f to Color.White.copy(alpha = 0.74f),
-                        ),
-                        shape = RoundedCornerShape((controlHeight - controlPadding * 2) / 2),
-                    ),
-            )
-
-            Row(Modifier.fillMaxWidth()) {
-                labels.forEachIndexed { index, label ->
-                    val isSelected = selectedIndex == index
-                    Box(
-                        modifier = Modifier
-                            .size(width = segmentWidth, height = actionTouchSize)
-                            .clip(RoundedCornerShape(actionTouchSize / 2))
-                            .semantics {
-                                contentDescription = label
-                                selected = isSelected
-                            }
-                            .clickable(role = Role.Tab) { onItemClick(index) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = label,
-                            color = PhotoTubeColors.Ink,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                        )
-                    }
-                }
-            }
-        }
-
-        DockActionButton(
-            kind = AppIconKind.Filter,
-            contentDescription = "打开显示选项",
-            touchSize = actionTouchSize,
-            visualSize = actionVisualSize,
-            onClick = onMenuClick,
-        )
-    }
-}
-
-@Composable
-private fun DockActionButton(
-    kind: AppIconKind,
-    contentDescription: String,
-    touchSize: Dp,
-    visualSize: Dp,
-    onClick: () -> Unit,
-) {
     Box(
-        modifier = Modifier
-            .size(touchSize)
-            .semantics { this.contentDescription = contentDescription }
-            .clickable(role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .navigationBarsPadding()
+            .padding(bottom = 10.dp)
+            .size(width = controlWidth, height = touchHeight)
+            .pointerInput(selectedIndex, stepPx) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragOffsetPx = 0f },
+                    onDragCancel = { dragOffsetPx = 0f },
+                    onDragEnd = {
+                        val threshold = stepPx * 0.22f
+                        val target = when {
+                            dragOffsetPx < -threshold -> selectedIndex - 1
+                            dragOffsetPx > threshold -> selectedIndex + 1
+                            else -> selectedIndex
+                        }.coerceIn(0, 1)
+                        dragOffsetPx = 0f
+                        if (target != selectedIndex) onItemClick(target)
+                    },
+                ) { change, dragAmount ->
+                    change.consume()
+                    dragOffsetPx = (dragOffsetPx + dragAmount)
+                        .coerceIn(-selectedIndex * stepPx, (1 - selectedIndex) * stepPx)
+                }
+            },
     ) {
+        val labels = listOf("所有照片", "相册")
+
         Box(
             modifier = Modifier
-                .size(visualSize)
+                .align(Alignment.Center)
+                .size(width = controlWidth, height = controlHeight)
                 .shadow(
-                    elevation = 2.dp,
-                    shape = CircleShape,
+                    elevation = 3.dp,
+                    shape = RoundedCornerShape(controlHeight / 2),
                     clip = false,
                     ambientColor = Color.Black.copy(alpha = 0.025f),
                     spotColor = Color.Black.copy(alpha = 0.04f),
                 )
                 .android16Glass(
-                    cornerRadius = visualSize / 2,
+                    cornerRadius = controlHeight / 2,
                     strength = 0.91f,
                     showBorder = false,
                 )
-                .background(Color.White.copy(alpha = 0.42f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            AppIcon(kind, Modifier.size(18.dp), PhotoTubeColors.Ink)
+                .background(
+                    brush = Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.64f),
+                        1f to Color(0xFFE2E4E7).copy(alpha = 0.52f),
+                    ),
+                    shape = RoundedCornerShape(controlHeight / 2),
+                ),
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset {
+                    IntOffset(
+                        x = (indicatorOffsetPx + indicatorInsetPx).roundToInt(),
+                        y = 0,
+                    )
+                }
+                .size(
+                    width = segmentWidth - controlPadding * 2,
+                    height = controlHeight - controlPadding * 2,
+                )
+                .shadow(
+                    elevation = 1.dp,
+                    shape = RoundedCornerShape((controlHeight - controlPadding * 2) / 2),
+                    clip = false,
+                    ambientColor = Color.Black.copy(alpha = 0.02f),
+                    spotColor = Color.Black.copy(alpha = 0.035f),
+                )
+                .background(
+                    brush = Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.98f),
+                        1f to Color.White.copy(alpha = 0.88f),
+                    ),
+                    shape = RoundedCornerShape((controlHeight - controlPadding * 2) / 2),
+                ),
+        )
+
+        Row(Modifier.fillMaxWidth()) {
+            labels.forEachIndexed { index, label ->
+                val isSelected = selectedIndex == index
+                Box(
+                    modifier = Modifier
+                        .size(width = segmentWidth, height = touchHeight)
+                        .clip(RoundedCornerShape(touchHeight / 2))
+                        .semantics {
+                            contentDescription = label
+                            selected = isSelected
+                        }
+                        .clickable(role = Role.Tab) { onItemClick(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        color = PhotoTubeColors.Ink,
+                        fontSize = 15.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }

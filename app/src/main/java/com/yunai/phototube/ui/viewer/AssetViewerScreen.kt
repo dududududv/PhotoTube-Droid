@@ -1,10 +1,22 @@
 package com.yunai.phototube.ui.viewer
 
+import android.content.Context
+import android.content.Intent
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,13 +28,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -33,6 +50,10 @@ import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +61,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -58,8 +80,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,15 +112,24 @@ import com.yunai.phototube.data.timeline.AssetState
 import com.yunai.phototube.data.timeline.MediaAsset
 import com.yunai.phototube.data.timeline.ThumbnailSize
 import com.yunai.phototube.ui.theme.PhotoTubeColors
+import com.yunai.phototube.ui.components.Android16HazeProvider
+import com.yunai.phototube.ui.components.android16Glass
+import com.yunai.phototube.ui.components.rememberAndroid16HazeState
 import com.yunai.phototube.ui.components.DiagnosticErrorText
 import com.yunai.phototube.ui.photos.TimelineError
 import com.yunai.phototube.ui.AssetChangeKind
+import dev.chrisbanes.haze.hazeSource
 import okhttp3.OkHttpClient
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import java.util.Locale
+import kotlin.math.abs
 
 @Composable
 fun AssetViewerRoute(
     assetId: String,
+    stripAssets: List<MediaAsset>,
     repository: AssetRepository,
     editRepository: EditRepository,
     tagRepository: TagRepository,
@@ -102,6 +137,7 @@ fun AssetViewerRoute(
     httpClient: OkHttpClient,
     refreshRevision: Int,
     onPrivateAssetVisibilityChanged: (Boolean?) -> Unit,
+    onSelectAsset: (String) -> Unit,
     onBack: (changes: Set<AssetChangeKind>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -121,16 +157,19 @@ fun AssetViewerRoute(
             state.asset?.takeIf { it.id == assetId }?.private,
         )
     }
+    val context = LocalContext.current
+    var carriedChanges by remember { mutableStateOf<Set<AssetChangeKind>>(emptySet()) }
     var showTags by remember { mutableStateOf(false) }
     var showActions by remember { mutableStateOf(false) }
     var showInfo by remember(assetId) { mutableStateOf(false) }
     var destructiveAction by remember { mutableStateOf<DestructiveAssetAction?>(null) }
     var showEditor by remember { mutableStateOf(false) }
-    BackHandler { onBack(state.changes) }
+    val leaveViewer = { onBack(carriedChanges + state.changes) }
+    BackHandler { leaveViewer() }
     LaunchedEffect(state.closeRequested) {
         if (state.closeRequested) {
             viewerViewModel.consumeCloseRequest()
-            onBack(state.changes)
+            leaveViewer()
         }
     }
     LaunchedEffect(editState.applyEvent?.revision) {
@@ -147,17 +186,27 @@ fun AssetViewerRoute(
     }
     AssetViewerScreen(
         state = state,
+        stripAssets = stripAssets,
         serverRoot = repository.serverRoot(),
         httpClient = httpClient,
-        onBack = { onBack(state.changes) },
+        onBack = leaveViewer,
         onRetry = viewerViewModel::refresh,
         onFavoriteChanged = viewerViewModel::setFavorite,
         onOpenActions = { showActions = true },
-        onOpenTags = {
-            showTags = true
-            viewerViewModel.searchTags("")
-        },
         onOpenInfo = { showInfo = true },
+        onOpenEditor = {
+            val asset = state.asset ?: return@AssetViewerScreen
+            editViewModel.open(asset)
+            showEditor = true
+        },
+        onMoveToTrash = { destructiveAction = DestructiveAssetAction.Trash },
+        onShare = { asset -> shareAsset(context, asset, repository.serverRoot()) },
+        onSelectAsset = { nextAssetId ->
+            if (nextAssetId != assetId) {
+                carriedChanges = carriedChanges + state.changes
+                onSelectAsset(nextAssetId)
+            }
+        },
         modifier = modifier,
     )
     if (showInfo) {
@@ -180,6 +229,15 @@ fun AssetViewerRoute(
         AssetActionsSheet(
             state = state,
             onDismiss = { showActions = false },
+            onOpenTags = {
+                showActions = false
+                showTags = true
+                viewerViewModel.searchTags("")
+            },
+            onOpenInfo = {
+                showActions = false
+                showInfo = true
+            },
             onOpenEditor = {
                 val asset = state.asset ?: return@AssetActionsSheet
                 showActions = false
@@ -258,44 +316,117 @@ fun AssetViewerRoute(
 @Composable
 private fun AssetViewerScreen(
     state: AssetViewerUiState,
+    stripAssets: List<MediaAsset>,
     serverRoot: ServerRoot,
     httpClient: OkHttpClient,
     onBack: () -> Unit,
     onRetry: () -> Unit,
     onFavoriteChanged: (Boolean) -> Unit,
     onOpenActions: () -> Unit,
-    onOpenTags: () -> Unit,
     onOpenInfo: () -> Unit,
+    onOpenEditor: () -> Unit,
+    onMoveToTrash: () -> Unit,
+    onShare: (MediaAsset) -> Unit,
+    onSelectAsset: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(PhotoTubeColors.Background)
-            .statusBarsPadding(),
-    ) {
-        ViewerTopBar(state, onBack, onFavoriteChanged, onOpenActions)
+    ViewerSystemBars()
+    val hazeState = rememberAndroid16HazeState()
+    var showChrome by remember(state.asset?.id) { mutableStateOf(true) }
+    val displayedStripAssets = remember(state.asset?.id, stripAssets) {
+        val current = state.asset
+        val loaded = stripAssets.distinctBy(MediaAsset::id)
+        if (current == null || loaded.any { it.id == current.id }) loaded else listOf(current)
+    }
+    val currentStripIndex = displayedStripAssets.indexOfFirst { it.id == state.asset?.id }
+    Android16HazeProvider(state = hazeState) {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .background(Color(0xFF101114)),
-            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color(0xFFF7F8FA)),
         ) {
-            when {
-                state.asset != null -> AssetMedia(state.asset, serverRoot, httpClient)
-                state.isLoading -> CircularProgressIndicator(color = Color.White)
-                else -> ViewerError(state.error, onRetry)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .hazeSource(state = hazeState),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    state.asset != null -> AssetMedia(
+                        asset = state.asset,
+                        serverRoot = serverRoot,
+                        httpClient = httpClient,
+                        onToggleChrome = { showChrome = !showChrome },
+                        onOpenInfo = onOpenInfo,
+                        onPreviousAsset = displayedStripAssets.getOrNull(currentStripIndex - 1)
+                            ?.let { previous -> { onSelectAsset(previous.id) } },
+                        onNextAsset = displayedStripAssets.getOrNull(currentStripIndex + 1)
+                            ?.let { next -> { onSelectAsset(next.id) } },
+                    )
+                    state.isLoading -> CircularProgressIndicator(color = PhotoTubeColors.Ink)
+                    else -> ViewerError(state.error, onRetry)
+                }
+            }
+            AnimatedVisibility(
+                visible = showChrome,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                ViewerTopBar(
+                    state = state,
+                    onBack = onBack,
+                    onOpenActions = onOpenActions,
+                )
+            }
+            state.asset?.let {
+                AnimatedVisibility(
+                    visible = showChrome,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    ViewerBottomChrome(
+                        asset = it,
+                        state = state,
+                        stripAssets = displayedStripAssets,
+                        serverRoot = serverRoot,
+                        onSelectAsset = onSelectAsset,
+                        onShare = { onShare(it) },
+                        onFavoriteChanged = { onFavoriteChanged(!it.favorite) },
+                        onOpenInfo = onOpenInfo,
+                        onOpenEditor = onOpenEditor,
+                        onMoveToTrash = onMoveToTrash,
+                    )
+                }
+            }
+            state.error?.takeIf { state.asset != null }?.let {
+                DiagnosticErrorText(
+                    message = it.message,
+                    logId = it.logId,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                )
             }
         }
-        state.asset?.let { AssetMetadata(it, onOpenTags, onOpenInfo) }
-        state.error?.takeIf { state.asset != null }?.let {
-            DiagnosticErrorText(
-                message = it.message,
-                logId = it.logId,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
+    }
+}
+
+@Composable
+private fun ViewerSystemBars() {
+    val activity = LocalContext.current as? ComponentActivity
+    DisposableEffect(activity) {
+        activity?.enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(Color(0xFFF7F8FA).toArgb(), Color(0xFFF7F8FA).toArgb()),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
+        onDispose {
+            val background = PhotoTubeColors.Background.toArgb()
+            activity?.enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.light(background, background),
+                navigationBarStyle = SystemBarStyle.light(background, background),
             )
         }
     }
@@ -305,44 +436,41 @@ private fun AssetViewerScreen(
 private fun ViewerTopBar(
     state: AssetViewerUiState,
     onBack: () -> Unit,
-    onFavoriteChanged: (Boolean) -> Unit,
     onOpenActions: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
-            .padding(horizontal = 8.dp),
+            .statusBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) {
+        ViewerIconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = state.asset?.fileName ?: "正在加载",
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            style = MaterialTheme.typography.titleMedium,
-        )
-        state.asset?.takeIf { it.state != AssetState.TRASHED }?.let { asset ->
-            IconButton(
-                enabled = !state.isSavingFavorite,
-                onClick = { onFavoriteChanged(!asset.favorite) },
+        state.asset?.let { asset ->
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                if (state.isSavingFavorite) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(
-                        imageVector = if (asset.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                        contentDescription = if (asset.favorite) "取消收藏" else "收藏",
-                        tint = if (asset.favorite) PhotoTubeColors.Alert else PhotoTubeColors.Ink,
-                    )
-                }
+                Text(
+                    text = viewerSourceLabel(asset),
+                    color = PhotoTubeColors.Ink,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Text(
+                    text = viewerDateLabel(asset.takenAt),
+                    color = PhotoTubeColors.Muted,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                )
             }
-        }
+        } ?: Spacer(Modifier.weight(1f))
         if (state.asset != null) {
-            IconButton(enabled = !state.isSavingMutation, onClick = onOpenActions) {
+            ViewerIconButton(enabled = !state.isSavingMutation, onClick = onOpenActions) {
                 if (state.isSavingMutation) {
                     CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 } else {
@@ -354,7 +482,26 @@ private fun ViewerTopBar(
 }
 
 @Composable
-private fun AssetMedia(asset: MediaAsset, serverRoot: ServerRoot, httpClient: OkHttpClient) {
+private fun ViewerIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+        IconButton(onClick = onClick, enabled = enabled, content = content)
+    }
+}
+
+@Composable
+private fun AssetMedia(
+    asset: MediaAsset,
+    serverRoot: ServerRoot,
+    httpClient: OkHttpClient,
+    onToggleChrome: () -> Unit,
+    onOpenInfo: () -> Unit,
+    onPreviousAsset: (() -> Unit)?,
+    onNextAsset: (() -> Unit)?,
+) {
     if (asset.state == AssetState.PROCESSING) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             asset.thumbnailUrl(serverRoot, ThumbnailSize.MD)?.let { thumbnailUrl ->
@@ -385,7 +532,7 @@ private fun AssetMedia(asset: MediaAsset, serverRoot: ServerRoot, httpClient: Ok
             AssetState.TRASHED -> "资产位于回收站"
             AssetState.BROWSABLE, AssetState.PROCESSING -> error("已在前置分支处理")
         }
-        Text(label, color = Color.White.copy(alpha = 0.78f))
+        Text(label, color = PhotoTubeColors.Ink.copy(alpha = 0.72f))
         return
     }
     var showMotionVideo by remember(asset.id) { mutableStateOf(false) }
@@ -396,7 +543,14 @@ private fun AssetMedia(asset: MediaAsset, serverRoot: ServerRoot, httpClient: Ok
         } else if (asset.kind == AssetKind.VIDEO) {
             AuthenticatedVideoPlayer(asset.originalUrl(serverRoot), httpClient)
         } else {
-            OriginalPhoto(asset, serverRoot)
+            OriginalPhoto(
+                asset = asset,
+                serverRoot = serverRoot,
+                onToggleChrome = onToggleChrome,
+                onOpenInfo = onOpenInfo,
+                onPreviousAsset = onPreviousAsset,
+                onNextAsset = onNextAsset,
+            )
         }
         if (motionVideoUrl != null) {
             FilledTonalButton(
@@ -417,18 +571,63 @@ private fun AssetMedia(asset: MediaAsset, serverRoot: ServerRoot, httpClient: Ok
 }
 
 @Composable
-private fun OriginalPhoto(asset: MediaAsset, serverRoot: ServerRoot) {
+private fun OriginalPhoto(
+    asset: MediaAsset,
+    serverRoot: ServerRoot,
+    onToggleChrome: () -> Unit,
+    onOpenInfo: () -> Unit,
+    onPreviousAsset: (() -> Unit)?,
+    onNextAsset: (() -> Unit)?,
+) {
     var scale by remember(asset.id) { mutableFloatStateOf(1f) }
+    var horizontalDrag by remember(asset.id) { mutableFloatStateOf(0f) }
+    var verticalDrag by remember(asset.id) { mutableFloatStateOf(0f) }
     val transformState = rememberTransformableState { zoomChange, _, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 3f)
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 82.dp, bottom = 142.dp)
+            .background(Color(0xFFF7F8FA))
+            .pointerInput(asset.id, scale) {
+                if (scale == 1f) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var previousPosition = down.position
+                        var multiTouch = false
+                        var pressed = true
+                        while (pressed) {
+                            val event = awaitPointerEvent(PointerEventPass.Final)
+                            if (event.changes.count { it.pressed } > 1) multiTouch = true
+                            event.changes.firstOrNull { it.id == down.id }?.let { change ->
+                                val delta = change.position - previousPosition
+                                horizontalDrag += delta.x
+                                verticalDrag += delta.y
+                                previousPosition = change.position
+                            }
+                            pressed = event.changes.any { it.pressed }
+                        }
+                        if (!multiTouch) {
+                            when {
+                                verticalDrag < -72f && abs(verticalDrag) > abs(horizontalDrag) -> onOpenInfo()
+                                horizontalDrag > 88f && abs(horizontalDrag) > abs(verticalDrag) -> onPreviousAsset?.invoke()
+                                horizontalDrag < -88f && abs(horizontalDrag) > abs(verticalDrag) -> onNextAsset?.invoke()
+                            }
+                        }
+                        horizontalDrag = 0f
+                        verticalDrag = 0f
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
         AsyncImage(
             model = asset.thumbnailUrl(serverRoot, ThumbnailSize.MD),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit,
-            alpha = 0.55f,
+            alpha = 0.46f,
         )
         AsyncImage(
             model = asset.displayPhotoUrl(serverRoot),
@@ -436,6 +635,9 @@ private fun OriginalPhoto(asset: MediaAsset, serverRoot: ServerRoot) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer(scaleX = scale, scaleY = scale)
+                .pointerInput(asset.id) {
+                    detectTapGestures(onTap = { onToggleChrome() })
+                }
                 .transformable(transformState),
             contentScale = ContentScale.Fit,
         )
@@ -510,60 +712,173 @@ private fun AuthenticatedVideoPlayer(url: String, httpClient: OkHttpClient) {
 }
 
 @Composable
-private fun AssetMetadata(
+private fun ViewerBottomChrome(
     asset: MediaAsset,
-    onOpenTags: () -> Unit,
+    state: AssetViewerUiState,
+    stripAssets: List<MediaAsset>,
+    serverRoot: ServerRoot,
+    onSelectAsset: (String) -> Unit,
+    onShare: () -> Unit,
+    onFavoriteChanged: () -> Unit,
     onOpenInfo: () -> Unit,
+    onOpenEditor: () -> Unit,
+    onMoveToTrash: () -> Unit,
 ) {
+    val effectiveAssets = remember(asset.id, stripAssets) {
+        val loaded = stripAssets.distinctBy(MediaAsset::id)
+        if (loaded.any { it.id == asset.id }) loaded else listOf(asset)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) {
-                Text(asset.title ?: asset.fileName, style = MaterialTheme.typography.titleMedium)
-                Text(asset.relativePath, color = PhotoTubeColors.Muted, fontSize = 13.sp, maxLines = 1)
-            }
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = listOfNotNull(asset.width, asset.height).joinToString(" × ").ifEmpty { asset.kind.name },
-                color = PhotoTubeColors.Muted,
-                fontSize = 13.sp,
+            .android16Glass(
+                cornerRadius = 0.dp,
+                strength = 0.54f,
+                showBorder = false,
             )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (asset.tags != null) {
-                TextButton(
-                    onClick = onOpenTags,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    val label = asset.tags.takeIf { it.isNotEmpty() }
-                        ?.joinToString(" · ") { it.name }
-                        ?: "添加标签"
-                    Text(label, maxLines = 1)
-                }
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
-            TextButton(onClick = onOpenInfo) { Text("照片信息") }
-        }
-        asset.motionPhoto?.let { motion ->
-            Text(
-                "OPPO 动态照片 · ${String.format(Locale.getDefault(), "%.1f", motion.durationSec)} 秒 · ${motion.width} × ${motion.height}",
-                color = PhotoTubeColors.Muted,
-                fontSize = 12.sp,
+            .background(Color.White.copy(alpha = 0.82f))
+            .navigationBarsPadding(),
+    ) {
+        ViewerFilmstrip(
+            assets = effectiveAssets,
+            selectedAssetId = asset.id,
+            serverRoot = serverRoot,
+            onSelectAsset = onSelectAsset,
+        )
+        HorizontalDivider(color = PhotoTubeColors.Ink.copy(alpha = 0.06f))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ViewerActionButton(Icons.Outlined.Share, "分享", onShare, enabled = asset.canReadOriginal())
+            ViewerActionButton(
+                imageVector = if (asset.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = if (asset.favorite) "取消收藏" else "收藏",
+                onClick = onFavoriteChanged,
+                enabled = !state.isSavingFavorite && asset.state != AssetState.TRASHED,
+                tint = if (asset.favorite) PhotoTubeColors.Alert else PhotoTubeColors.Ink,
+                loading = state.isSavingFavorite,
+            )
+            ViewerActionButton(Icons.Outlined.Info, "照片信息", onOpenInfo)
+            ViewerActionButton(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = "编辑照片",
+                onClick = onOpenEditor,
+                enabled = asset.isEditablePhoto(),
+            )
+            ViewerActionButton(
+                imageVector = Icons.Outlined.DeleteOutline,
+                contentDescription = "移入回收站",
+                onClick = onMoveToTrash,
+                enabled = asset.state != AssetState.TRASHED && !state.isSavingMutation,
             )
         }
     }
 }
 
+@Composable
+private fun ViewerFilmstrip(
+    assets: List<MediaAsset>,
+    selectedAssetId: String,
+    serverRoot: ServerRoot,
+    onSelectAsset: (String) -> Unit,
+) {
+    val selectedIndex = assets.indexOfFirst { it.id == selectedAssetId }.coerceAtLeast(0)
+    val listState = rememberLazyListState()
+    LaunchedEffect(selectedIndex, assets.size) {
+        listState.animateScrollToItem((selectedIndex - 4).coerceAtLeast(0))
+    }
+    LazyRow(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        itemsIndexed(assets, key = { _, item -> item.id }) { _, item ->
+            val selected = item.id == selectedAssetId
+            AsyncImage(
+                model = item.thumbnailUrl(serverRoot, ThumbnailSize.SM),
+                contentDescription = if (selected) "当前照片" else item.fileName,
+                modifier = Modifier
+                    .width(if (selected) 36.dp else 30.dp)
+                    .height(if (selected) 46.dp else 38.dp)
+                    .graphicsLayer(alpha = if (selected) 1f else 0.56f)
+                    .clip(RoundedCornerShape(if (selected) 8.dp else 6.dp))
+                    .clickable(enabled = !selected) { onSelectAsset(item.id) },
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ViewerActionButton(
+    imageVector: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    tint: Color = PhotoTubeColors.Ink,
+    loading: Boolean = false,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(48.dp),
+    ) {
+        if (loading) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = tint)
+        } else {
+            Icon(
+                imageVector = imageVector,
+                contentDescription = contentDescription,
+                tint = if (enabled) tint else PhotoTubeColors.Muted.copy(alpha = 0.44f),
+            )
+        }
+    }
+}
+
+private val viewerDateFormatter = DateTimeFormatter.ofPattern(
+    "yyyy年M月d日 · HH:mm",
+    Locale.SIMPLIFIED_CHINESE,
+)
+
+private fun viewerDateLabel(value: String): String = try {
+    OffsetDateTime.parse(value).format(viewerDateFormatter)
+} catch (_: DateTimeParseException) {
+    value
+}
+
+private fun viewerSourceLabel(asset: MediaAsset): String = asset.title
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: asset.relativePath
+        .substringBeforeLast('/', missingDelimiterValue = "")
+        .substringAfterLast('/')
+        .ifBlank { assetKindLabel(asset.kind) }
+
+private fun shareAsset(context: Context, asset: MediaAsset, serverRoot: ServerRoot) {
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, asset.title ?: asset.fileName)
+        putExtra(Intent.EXTRA_TEXT, asset.originalUrl(serverRoot))
+    }
+    context.startActivity(Intent.createChooser(shareIntent, "分享照片"))
+}
+
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AssetInfoSheet(asset: MediaAsset, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFFF7F8FA),
+    ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -755,6 +1070,8 @@ private fun TagPickerSheet(
 private fun AssetActionsSheet(
     state: AssetViewerUiState,
     onDismiss: () -> Unit,
+    onOpenTags: () -> Unit,
+    onOpenInfo: () -> Unit,
     onOpenEditor: () -> Unit,
     onSetRating: (Int?) -> Unit,
     onSetArchived: (Boolean) -> Unit,
@@ -773,6 +1090,23 @@ private fun AssetActionsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("资产操作", style = MaterialTheme.typography.headlineSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                FilledTonalButton(
+                    onClick = onOpenTags,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("管理标签")
+                }
+                FilledTonalButton(
+                    onClick = onOpenInfo,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("照片信息")
+                }
+            }
             if (asset.state == AssetState.TRASHED) {
                 FilledTonalButton(
                     onClick = onRestore,
@@ -925,7 +1259,7 @@ private fun ViewerError(error: TimelineError?, onRetry: () -> Unit) {
             message = error?.message ?: "资产加载失败",
             logId = error?.logId,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-            messageColor = Color.White,
+            messageColor = PhotoTubeColors.Ink,
         )
         Spacer(Modifier.height(12.dp))
         androidx.compose.material3.Button(onClick = onRetry) { Text("重试") }

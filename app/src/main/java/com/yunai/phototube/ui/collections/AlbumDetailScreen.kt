@@ -3,6 +3,8 @@ package com.yunai.phototube.ui.collections
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -234,6 +235,8 @@ private fun AlbumDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     val album = state.album
+    var showPathDetails by remember(album?.id) { mutableStateOf(false) }
+    var showSyncHistory by remember(album?.id) { mutableStateOf(false) }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -243,86 +246,135 @@ private fun AlbumDetailScreen(
             end = PhotoTubeDimens.ScreenPadding,
             bottom = 48.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(PhotoTubeDimens.GridGap),
     ) {
         item {
             Column(Modifier.statusBarsPadding()) {
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
                     }
-                    Text(
-                        text = album?.name ?: "正在加载图集",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.headlineSmall,
-                        maxLines = 1,
-                    )
+                    Spacer(Modifier.weight(1f))
                     if (album != null) {
                         IconButton(onClick = onSettings) {
                             Icon(Icons.Rounded.MoreVert, contentDescription = "图集设置")
                         }
                     }
                 }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = album?.name ?: "正在加载图集",
+                    color = PhotoTubeColors.Ink,
+                    fontSize = 40.sp,
+                    lineHeight = 46.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                )
+                album?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = albumMetaLabel(it),
+                        color = PhotoTubeColors.Muted,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                Spacer(Modifier.height(18.dp))
             }
         }
 
         if (state.isLoading && album == null) {
             item { DetailLoading() }
         } else if (album != null) {
-            item { AlbumSummary(album) }
+            state.notice?.let { item { NoticeCard(it) } }
+            state.error?.let { item { DetailError(it, onRetry) } }
+
             if (album.kind == AlbumKind.PATH_SYNC) {
                 item {
-                    PathSyncControls(
+                    PathSyncToolbar(
                         album = album,
                         paths = state.paths,
                         state = state,
-                        onAddPath = onAddPath,
-                        onRemovePath = onRemovePath,
+                        onManagePaths = { showPathDetails = !showPathDetails },
                         onManualSync = onManualSync,
                     )
                 }
-                item { Text("扫描历史", style = MaterialTheme.typography.headlineSmall) }
-                when (val refresh = syncRuns.loadState.refresh) {
-                    is LoadState.Loading -> item { DetailLoading(compact = true) }
-                    is LoadState.Error -> item {
-                        DetailError(refresh.error.toTimelineError(), syncRuns::retry)
+                if (showPathDetails) {
+                    item {
+                        PathSyncControls(
+                            album = album,
+                            paths = state.paths,
+                            state = state,
+                            onAddPath = onAddPath,
+                            onRemovePath = onRemovePath,
+                        )
                     }
-                    is LoadState.NotLoading -> {
-                        if (syncRuns.itemCount == 0) {
-                            item {
-                                Text(
-                                    "还没有扫描记录。只有明确点击“手动扫描”才会创建运行。",
-                                    color = PhotoTubeColors.Muted,
-                                    fontSize = 13.sp,
-                                )
-                            }
-                        } else {
-                            items(
-                                count = syncRuns.itemCount,
-                                key = { index -> syncRuns[index]?.id ?: "sync-placeholder-$index" },
-                            ) { index ->
-                                syncRuns[index]?.let { run ->
-                                    SyncRunHistoryCard(
-                                        run = run,
-                                        selected = run.id == state.selectedSyncRunId,
-                                        onClick = { onOpenSyncRun(run) },
+                }
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable { showSyncHistory = !showSyncHistory }
+                            .padding(horizontal = 4.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("扫描历史", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text(
+                            if (showSyncHistory) "收起" else "查看 ${syncRuns.itemCount} 条",
+                            color = PhotoTubeColors.Muted,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+                if (showSyncHistory) {
+                    when (val refresh = syncRuns.loadState.refresh) {
+                        is LoadState.Loading -> item { DetailLoading(compact = true) }
+                        is LoadState.Error -> item {
+                            DetailError(refresh.error.toTimelineError(), syncRuns::retry)
+                        }
+                        is LoadState.NotLoading -> {
+                            if (syncRuns.itemCount == 0) {
+                                item {
+                                    Text(
+                                        "还没有扫描记录。手动扫描后会在这里显示结果。",
+                                        color = PhotoTubeColors.Muted,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.padding(vertical = 8.dp),
                                     )
+                                }
+                            } else {
+                                items(
+                                    count = syncRuns.itemCount,
+                                    key = { index -> syncRuns[index]?.id ?: "sync-placeholder-$index" },
+                                ) { index ->
+                                    syncRuns[index]?.let { run ->
+                                        SyncRunHistoryCard(
+                                            run = run,
+                                            selected = run.id == state.selectedSyncRunId,
+                                            onClick = { onOpenSyncRun(run) },
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                when (val append = syncRuns.loadState.append) {
-                    is LoadState.Loading -> item { DetailLoading(compact = true) }
-                    is LoadState.Error -> item {
-                        DetailError(append.error.toTimelineError(), syncRuns::retry)
+                    when (val append = syncRuns.loadState.append) {
+                        is LoadState.Loading -> item { DetailLoading(compact = true) }
+                        is LoadState.Error -> item {
+                            DetailError(append.error.toTimelineError(), syncRuns::retry)
+                        }
+                        is LoadState.NotLoading -> Unit
                     }
-                    is LoadState.NotLoading -> Unit
                 }
             } else if (album.kind == AlbumKind.NORMAL) {
                 item {
-                    Button(onClick = onAddAssets, enabled = !state.isBusy) {
+                    Button(
+                        onClick = onAddAssets,
+                        enabled = !state.isBusy,
+                        modifier = Modifier.height(48.dp),
+                    ) {
                         Icon(Icons.Rounded.Add, contentDescription = null)
                         Spacer(Modifier.size(6.dp))
                         Text("添加照片")
@@ -330,9 +382,17 @@ private fun AlbumDetailScreen(
                 }
             }
 
-            state.notice?.let { item { NoticeCard(it) } }
-            state.error?.let { item { DetailError(it, onRetry) } }
-            item { Text("照片", style = MaterialTheme.typography.headlineSmall) }
+            item { Spacer(Modifier.height(16.dp)) }
+            item {
+                Text(
+                    "照片",
+                    color = PhotoTubeColors.Ink,
+                    fontSize = 30.sp,
+                    lineHeight = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
 
             when (val refresh = assets.loadState.refresh) {
                 is LoadState.Loading -> item { DetailLoading() }
@@ -379,19 +439,62 @@ private fun AlbumDetailScreen(
     }
 }
 
+private fun albumMetaLabel(album: Album): String {
+    val kind = when (album.kind) {
+        AlbumKind.NORMAL -> "普通相册"
+        AlbumKind.SMART -> "智能相册"
+        AlbumKind.PATH_SYNC -> "路径相册"
+    }
+    val order = if (album.sortMode.name.endsWith("DESC")) "最新优先" else "最早优先"
+    return "$kind · ${album.assetCount} 项 · $order"
+}
+
 @Composable
-private fun AlbumSummary(album: Album) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            when (album.kind) {
-                AlbumKind.NORMAL -> "普通相册"
-                AlbumKind.SMART -> "智能相册"
-                AlbumKind.PATH_SYNC -> "路径相册"
-            },
-            color = PhotoTubeColors.Muted,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text("${album.assetCount} 项 · ${if (album.sortMode.name.endsWith("DESC")) "最新优先" else "最早优先"}")
+private fun PathSyncToolbar(
+    album: Album,
+    paths: List<AlbumPath>,
+    state: AlbumDetailUiState,
+    onManagePaths: () -> Unit,
+    onManualSync: () -> Unit,
+) {
+    val isSyncing = state.syncDetail?.run?.state in setOf(
+        AlbumPathSyncRunState.PENDING,
+        AlbumPathSyncRunState.RUNNING,
+    )
+    val latestState = paths.firstNotNullOfOrNull { it.lastRunState }
+    val status = when {
+        isSyncing -> "正在扫描"
+        state.requiresManualSync -> "需要扫描"
+        latestState != null -> syncPathStateLabel(latestState)
+        else -> "尚未扫描"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(24.dp))
+            .padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Rounded.Folder, contentDescription = null, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.size(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text("${paths.size} 个扫描目录", fontWeight = FontWeight.SemiBold)
+            Text(status, color = PhotoTubeColors.Muted, fontSize = 12.sp)
+        }
+        TextButton(onClick = onManagePaths, modifier = Modifier.height(48.dp)) {
+            Text("管理")
+        }
+        Button(
+            onClick = onManualSync,
+            enabled = !state.isBusy && (album.pathSync?.enabledPathCount ?: 0) > 0,
+            modifier = Modifier.height(48.dp),
+        ) {
+            if (isSyncing) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+            } else {
+                Text("扫描")
+            }
+        }
     }
 }
 
@@ -402,7 +505,6 @@ private fun PathSyncControls(
     state: AlbumDetailUiState,
     onAddPath: () -> Unit,
     onRemovePath: (AlbumPath) -> Unit,
-    onManualSync: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -436,23 +538,7 @@ private fun PathSyncControls(
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(onClick = onAddPath, enabled = !state.isBusy) { Text("添加目录") }
-            Button(
-                onClick = onManualSync,
-                enabled = !state.isBusy && (album.pathSync?.enabledPathCount ?: 0) > 0,
-            ) {
-                if (state.syncDetail?.run?.state in setOf(
-                        AlbumPathSyncRunState.PENDING,
-                        AlbumPathSyncRunState.RUNNING,
-                    )
-                ) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(if (state.requiresManualSync) "开始扫描（必需）" else "手动扫描")
-                }
-            }
-        }
+        TextButton(onClick = onAddPath, enabled = !state.isBusy) { Text("添加目录") }
         state.syncDetail?.let { detail ->
             Text(
                 "${detail.run.state.name} · 成功 ${detail.run.succeededPaths} · 离线 ${detail.run.offlinePaths} · 失败 ${detail.run.failedPaths}",
@@ -581,6 +667,7 @@ private fun AlbumAssetRow(
             val index = row * 3 + column
             if (index < assets.itemCount) {
                 val asset = assets[index]
+                var menuExpanded by remember(asset?.id) { mutableStateOf(false) }
                 AssetCell(
                     asset = asset,
                     serverRoot = serverRoot,
@@ -589,9 +676,14 @@ private fun AlbumAssetRow(
                         .weight(1f)
                         .fillMaxSize(),
                     onClick = { asset?.let { onOpenAsset(it.id) } },
+                    onLongClick = if (asset != null) {
+                        { menuExpanded = true }
+                    } else null,
                     trailingAction = if (asset != null) {
                         {
                             AlbumAssetMenu(
+                                expanded = menuExpanded,
+                                onDismiss = { menuExpanded = false },
                                 isCover = asset.id == coverAssetId,
                                 allowRemove = allowRemove,
                                 enabled = actionsEnabled,
@@ -612,6 +704,8 @@ private fun AlbumAssetRow(
 
 @Composable
 private fun AlbumAssetMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
     isCover: Boolean,
     allowRemove: Boolean,
     enabled: Boolean,
@@ -620,22 +714,12 @@ private fun AlbumAssetMenu(
     onRemove: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
-        IconButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            modifier = Modifier
-                .size(48.dp)
-                .background(Color.Black.copy(alpha = 0.58f), CircleShape),
-        ) {
-            Icon(Icons.Rounded.MoreVert, contentDescription = "照片在图集中的操作", tint = Color.White)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = onDismiss) {
             DropdownMenuItem(
                 text = { Text(if (isCover) "清除图集封面" else "设为图集封面") },
                 onClick = {
-                    expanded = false
+                    onDismiss()
                     if (isCover) onClearCover() else onSetCover()
                 },
             )
@@ -643,7 +727,7 @@ private fun AlbumAssetMenu(
                 DropdownMenuItem(
                     text = { Text("从图集中移除") },
                     onClick = {
-                        expanded = false
+                        onDismiss()
                         onRemove()
                     },
                 )
@@ -652,6 +736,7 @@ private fun AlbumAssetMenu(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AssetCell(
     asset: MediaAsset?,
@@ -659,13 +744,18 @@ private fun AssetCell(
     selected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     trailingAction: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(PhotoTubeDimens.PhotoRadius))
             .background(Color(0xFFE7E9ED))
-            .clickable(enabled = asset != null, onClick = onClick),
+            .combinedClickable(
+                enabled = asset != null,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         asset?.thumbnailUrl(serverRoot, ThumbnailSize.SM)?.let { url ->

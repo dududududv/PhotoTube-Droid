@@ -91,8 +91,6 @@ fun PhotoTimelineScreen(
                 selectedDockItem = index
                 if (index == 1) onOpenCollections()
             },
-            onLayoutClick = {},
-            onMenuClick = {},
         )
       }
     }
