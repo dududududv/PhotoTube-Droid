@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<network-security-config>
-    <!-- PhotoTube 的默认部署位于用户自行配置的局域网 HTTP 地址。 -->
-    <base-config cleartextTrafficPermitted="true" />
-</network-security-config>
