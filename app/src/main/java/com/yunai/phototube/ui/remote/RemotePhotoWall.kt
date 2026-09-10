@@ -12,6 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -27,8 +29,9 @@ import com.yunai.phototube.data.*
 import com.yunai.phototube.ui.theme.AppTheme
 
 @Composable
-internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier=Modifier) {
+internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier=Modifier,onOpen:((RemoteAsset,List<RemoteAsset>,Map<String,androidx.compose.ui.geometry.Rect>)->Unit)?=null) {
     val colors=AppTheme.colors
+    val bounds=remember {mutableMapOf<String,androidx.compose.ui.geometry.Rect>()}
     if(vm.stage!=ConnectionStage.READY) {
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal=24.dp).padding(top=topInset+56.dp,bottom=150.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
             Text("图库",fontSize=30.sp,fontWeight=FontWeight.SemiBold,color=colors.text)
@@ -78,7 +81,9 @@ internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier
                     is PhotoWallRow.Photos -> Row(Modifier.fillMaxWidth().height(row.height.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         row.photos.forEach {photo ->
                             val asset=(items[photo.index] as? WallEntry.Asset)?.value ?: photo.asset
-                            AssetThumbnail(asset,api,Modifier.width((row.height*photo.ratio).dp).fillMaxHeight())
+                            AssetThumbnail(asset,api,Modifier.width((row.height*photo.ratio).dp).fillMaxHeight()
+                            .onGloballyPositioned {bounds[asset.id]=it.boundsInWindow()}
+                            .clickable(enabled=onOpen!=null) {onOpen?.invoke(asset,snapshot.items.filterIsInstance<WallEntry.Asset>().map {it.value},bounds.toMap())})
                         }
                     }
                 }

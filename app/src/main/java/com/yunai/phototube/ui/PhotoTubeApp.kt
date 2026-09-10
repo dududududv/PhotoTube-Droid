@@ -76,6 +76,10 @@ private fun PhotoTubeContent() {
         var panel by rememberSaveable { mutableStateOf<String?>(null) }
         var showVideo by rememberSaveable { mutableStateOf(false) }
         var viewer by rememberSaveable(stateSaver = ViewerRequestSaver) { mutableStateOf<ViewerRequest?>(null) }
+        var remoteViewer by remember {mutableStateOf<ViewerRequest?>(null)}
+        LaunchedEffect(wall.stage,wall.server) {
+            if(wall.stage!=com.yunai.phototube.data.ConnectionStage.READY) remoteViewer=null
+        }
         var favoriteIds by rememberSaveable { mutableStateOf(photos.filter {it.favorite}.map {it.id}) }
         var removedIds by rememberSaveable { mutableStateOf(emptyList<Int>()) }
         var undoPhoto by remember { mutableStateOf<Photo?>(null) }
@@ -141,7 +145,16 @@ private fun PhotoTubeContent() {
         CompositionLocalProvider(LocalMediaBounds provides mediaBounds) {
         Box(Modifier.fillMaxSize().background(AppTheme.colors.background)) {
             // Photos extend behind the floating controls; only the controls apply glass.
-            if(tab==0) RemotePhotoWall(wall,cornerInsets.top,Modifier.nestedScroll(scrollConnection).layerBackdrop(backdrop).background(AppTheme.colors.background))
+            if(tab==0) RemotePhotoWall(wall,cornerInsets.top,Modifier.nestedScroll(scrollConnection).layerBackdrop(backdrop).background(AppTheme.colors.background)) { selected,assets,bounds ->
+                wall.server?.let {api ->
+                    val sequence=assets.mapIndexed {index,asset ->
+                        val date=java.time.OffsetDateTime.parse(asset.takenAt).let {d -> asset.takenAtOffsetMinutes?.let {d.withOffsetSameInstant(java.time.ZoneOffset.ofTotalSeconds(it*60))} ?: d}
+                        Photo(-index-1,asset.fileName,date.format(java.time.format.DateTimeFormatter.ofPattern("yyyy年M月d日")),asset.favorite,asset.kind=="VIDEO",RemoteMedia(asset,api))
+                    }
+                    remoteViewer=ViewerRequest(sequence,sequence.first {it.remote?.asset?.id==selected.id}.id,
+                        sequence.mapNotNull {photo -> bounds[photo.remote!!.asset.id]?.let {photo.id to it}}.toMap())
+                }
+            }
             else LazyColumn(
                 Modifier.fillMaxSize().nestedScroll(scrollConnection).layerBackdrop(backdrop).background(AppTheme.colors.background),
                 state = if (tab == 0) libraryState else albumsState,
@@ -263,6 +276,9 @@ private fun PhotoTubeContent() {
             )
         }
         if (showVideo) VideoGlassPreview(glassStrength) { showVideo = false }
+        remoteViewer?.let {request ->
+            MediaViewer(request,request.media.filter {it.favorite}.map {it.id}.toSet(),onFavorite={},onDelete={},onClose={remoteViewer=null})
+        }
         viewer?.let { request ->
             MediaViewer(request,favoriteIds.toSet(),onFavorite={id -> favoriteIds=if(id in favoriteIds) favoriteIds-id else favoriteIds+id},
                 onDelete={photo -> removedIds=removedIds+photo.id;undoPhoto=photo},onClose={viewer=null})

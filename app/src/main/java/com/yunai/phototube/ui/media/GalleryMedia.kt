@@ -89,8 +89,8 @@ internal fun rememberMediaMetadata(photo: Photo): MediaMetadata? {
     photo.remote?.let { source ->
         val detail=source.detail
         val edit=detail?.optJSONObject("activeEdit")
-        return MediaMetadata(edit?.optInt("displayWidth") ?: detail?.optInt("width",source.asset.width ?: 1) ?: source.asset.width ?: 1,
-            edit?.optInt("displayHeight") ?: detail?.optInt("height",source.asset.height ?: 1) ?: source.asset.height ?: 1,
+        return MediaMetadata(edit?.optInt("displayWidth") ?: detail?.optInt("width",source.asset.width ?: 1) ?: (source.asset.width ?: 1).coerceAtLeast(1),
+            edit?.optInt("displayHeight") ?: detail?.optInt("height",source.asset.height ?: 1) ?: (source.asset.height ?: 1).coerceAtLeast(1),
             detail?.optLong("fileSize") ?: 0L,((source.asset.durationSec ?: 0.0)*1000).toLong())
     }
     val context = LocalContext.current.applicationContext

@@ -1,5 +1,7 @@
 package com.yunai.phototube.ui.media
 
+import com.yunai.phototube.ui.theme.MediaColors
+import kotlinx.coroutines.launch
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -51,6 +53,7 @@ internal fun RemoteArtwork(source:RemoteMedia,modifier:Modifier,scale:ContentSca
     var failed by remember(source) {mutableStateOf(false)}
     var attempt by remember(source) {mutableIntStateOf(0)}
     val context=LocalContext.current
+    val scope=rememberCoroutineScope()
     val url=if(original && source.detail!=null) source.displayUrl() else null
     Box(modifier) {
         if(!original || !loaded) AsyncImage(source.server.thumbnail(source.asset),description,
@@ -66,7 +69,7 @@ internal fun RemoteArtwork(source:RemoteMedia,modifier:Modifier,scale:ContentSca
             val message=source.error ?: when(state) {"OFFLINE"->"文件暂时离线";"TRASHED"->"此文件已移入回收站";else->if(failed) "暂时无法读取原图" else null}
             if(message!=null) {
                 Text(message,color=MediaColors.text)
-                if(source.error==null) TextButton({failed=false;attempt++}) {Text("重试")}
+                TextButton({failed=false;attempt++;if(source.error!=null) scope.launch {source.load()}}) {Text("重试")}
             } else CircularProgressIndicator(Modifier.size(24.dp),color=MediaColors.text,strokeWidth=2.dp)
         }
     }

@@ -35,7 +35,7 @@ internal fun PhotoGestures(
     LaunchedEffect(zoom) { onZoomed(zoom > 1.01f) }
     LaunchedEffect(enabled) { if(!enabled) { zoom = 1f; pan = Offset.Zero } }
     fun clampPan(value: Offset, z: Float, width: Float, height: Float): Offset {
-        val ratio = if(metadata != null) metadata.width.toFloat() / metadata.height else width / height
+        val ratio = if(metadata != null) metadata.width.coerceAtLeast(1).toFloat() / metadata.height.coerceAtLeast(1) else width / height
         val imageWidth = minOf(width, height * ratio)
         val imageHeight = imageWidth / ratio
         return Offset(value.x.coerceIn(-maxOf(0f,(imageWidth*z-width)/2),maxOf(0f,(imageWidth*z-width)/2)),

@@ -65,7 +65,7 @@ import kotlin.math.abs
 
 internal data class ViewerRequest(val media: List<Photo>, val initialId: Int, val bounds: Map<Int, Rect>)
 internal val ViewerRequestSaver = listSaver<ViewerRequest?,Int>(
-    save={request -> request?.let {listOf(it.initialId)+it.media.map {photo->photo.id}} ?: emptyList()},
+    save={request -> request?.takeIf {it.media.none {photo->photo.remote!=null}}?.let {listOf(it.initialId)+it.media.map {photo->photo.id}} ?: emptyList()},
     restore={saved -> if(saved.isEmpty()) null else ViewerRequest(saved.drop(1).mapNotNull {id->photos.firstOrNull {it.id==id}},saved.first(),emptyMap())}
 )
 
@@ -74,6 +74,7 @@ internal val ViewerRequestSaver = listSaver<ViewerRequest?,Int>(
 internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite: (Int) -> Unit, onDelete: (Photo) -> Unit, onClose: () -> Unit) {
     val pager = rememberPagerState(initialPage = request.media.indexOfFirst { it.id == request.initialId }.coerceAtLeast(0)) { request.media.size }
     val current = request.media[pager.currentPage]
+    LaunchedEffect(current.remote) {current.remote?.load()}
     val metadata = rememberMediaMetadata(current)
     val progress = remember { Animatable(0f) }
     val mediaReady by remember { derivedStateOf { progress.value >= .999f } }
@@ -105,12 +106,18 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                                     try {
                                         val uri = withContext(Dispatchers.IO) {
                                             val directory = File(context.cacheDir,"shared-media").apply { mkdirs() }
-                                            val file = File(directory,"${resources.getResourceEntryName(current.id)}.${if(current.video) "mp4" else "jpg"}")
-                                            if(!file.exists()) resources.openRawResource(current.id).use { input -> file.outputStream().use { input.copyTo(it) } }
+                                            val file = File(directory,if(current.remote!=null) "${current.remote.asset.id}.${current.name.substringAfterLast('.',"bin").filter {it.isLetterOrDigit()}}" else "${resources.getResourceEntryName(current.id)}.${if(current.video) "mp4" else "jpg"}")
+                                            if(current.remote!=null) {
+                                                val source=current.remote
+                                                source.server.client.newCall(okhttp3.Request.Builder().url(source.server.original(source.asset.id)).build()).execute().use {response ->
+                                                    check(response.isSuccessful) {"无法读取分享文件"}
+                                                    response.body.byteStream().use {input -> file.outputStream().use {input.copyTo(it)}}
+                                                }
+                                            } else if(!file.exists()) resources.openRawResource(current.id).use { input -> file.outputStream().use { input.copyTo(it) } }
                                             FileProvider.getUriForFile(context,"${context.packageName}.files",file)
                                         }
                                         val intent = Intent(Intent.ACTION_SEND).apply {
-                                            type=if(current.video) "video/mp4" else "image/jpeg"
+                                            type=if(current.remote!=null) android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(current.name.substringAfterLast('.').lowercase()) ?: "application/octet-stream" else if(current.video) "video/mp4" else "image/jpeg"
                                             putExtra(Intent.EXTRA_STREAM,uri); clipData=ClipData.newRawUri(current.name,uri)
                                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                         }
@@ -148,7 +155,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                     userScrollEnabled = !current.video && !zoomed && !closing && drag == 0f, pageSpacing = 16.dp, key = { request.media[it].id }) { index ->
                     val media = request.media[index]
                     if(media.video) {
-                        Box(Modifier.fillMaxSize().testTag("viewer-video-surface")
+                        Box(Modifier.fillMaxSize().testTag("viewer-video-surface").semantics {stateDescription=if(playback?.ready==true) "已显示视频画面" else "正在加载视频"}
                             .pointerInput(media.id) { detectTapGestures(onTap = { chrome = !chrome }) }
                             .pointerInput(media.id, playback) {
                                 var origin=0L
@@ -223,7 +230,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                             Row(Modifier.mediaGlass(scene).padding(horizontal=4.dp), verticalAlignment=Alignment.CenterVertically) {
                                 MediaAction("关闭视频详情",MediaSymbol.BACK,::close)
                                 MediaAction(if(sharing) "正在准备分享" else "分享",MediaSymbol.SHARE,::share)
-                                MediaAction(if(current.id in favorites) "取消收藏" else "收藏",MediaSymbol.HEART,{onFavorite(current.id)},current.id in favorites,if(current.id in favorites) viewerAccent else MediaColors.text)
+                                MediaAction(if(current.id in favorites) "取消收藏" else "收藏",MediaSymbol.HEART,{onFavorite(current.id)},current.id in favorites,if(current.id in favorites) viewerAccent else MediaColors.text,enabled=current.remote==null)
                             }
                         } else MediaGlassButton(if(current.video) "关闭视频详情" else "关闭照片", MediaSymbol.BACK, scene, ::close)
                         Box(Modifier.weight(1f),contentAlignment=Alignment.Center) {
@@ -235,7 +242,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                         Row(Modifier.then(if(landscapeVideo) Modifier.mediaGlass(scene).padding(horizontal=4.dp) else Modifier),verticalAlignment=Alignment.CenterVertically) {
                             if(landscapeVideo) {
                                 MediaAction("照片与视频信息",MediaSymbol.INFO,{info=true})
-                                MediaAction("删除",MediaSymbol.TRASH,{delete=true})
+                                MediaAction("删除",MediaSymbol.TRASH,{delete=true},enabled=current.remote==null)
                             }
                         Box {
                             if(landscapeVideo) MediaAction("更多操作",MediaSymbol.MORE,{more=true})
@@ -259,12 +266,12 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                             Row(Modifier.height(48.dp).drawBackdrop(backdrop=scene,shape={RoundedCornerShape(50)},
                                 effects={vibrancy();blur(glass.blur.dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
                                 onDrawSurface={drawRect(MediaColors.scrim.copy(.24f))}).padding(horizontal=6.dp)) {
-                                IconButton(onClick={onFavorite(current.id)},modifier=Modifier.semantics {contentDescription=if(current.id in favorites) "取消收藏" else "收藏"}) {
+                                IconButton(enabled=current.remote==null,onClick={onFavorite(current.id)},modifier=Modifier.semantics {contentDescription=if(current.id in favorites) "取消收藏" else "收藏"}) {
                                     MediaIcon(MediaSymbol.HEART,if(current.id in favorites) viewerAccent else MediaColors.text,filled=current.id in favorites)
                                 }
                                 IconButton(onClick={info=true},modifier=Modifier.semantics {contentDescription="照片与视频信息"}) {MediaIcon(MediaSymbol.INFO)}
                             }
-                            MediaGlassButton("删除",MediaSymbol.TRASH,scene,{delete=true})
+                            MediaGlassButton("删除",MediaSymbol.TRASH,scene,{delete=true},enabled=current.remote==null)
                         }
                     }
                 }
@@ -290,8 +297,8 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
 }
 
 @Composable
-internal fun MediaGlassButton(label:String,symbol:MediaSymbol,backdrop:Backdrop,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text) {
-    LiquidButton(onClick,backdrop,Modifier.size(48.dp).semantics { contentDescription=label },shape=CircleShape,horizontalPadding=0.dp,surfaceColor=MediaColors.scrim.copy(.24f)) {
+internal fun MediaGlassButton(label:String,symbol:MediaSymbol,backdrop:Backdrop,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text,enabled:Boolean=true) {
+    LiquidButton({if(enabled) onClick()},backdrop,Modifier.size(48.dp).graphicsLayer {alpha=if(enabled) 1f else .35f}.semantics { contentDescription=label;if(!enabled) disabled() },shape=CircleShape,horizontalPadding=0.dp,surfaceColor=MediaColors.scrim.copy(.24f)) {
         MediaIcon(symbol,tint,filled)
     }
 }
@@ -303,8 +310,8 @@ private fun Modifier.mediaGlass(scene:Backdrop):Modifier {
         onDrawSurface={drawRect(MediaColors.scrim.copy(.24f))})
 }
 @Composable
-private fun MediaAction(label:String,symbol:MediaSymbol,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text) {
-    IconButton(onClick=onClick,modifier=Modifier.size(48.dp).semantics {contentDescription=label}) {
+private fun MediaAction(label:String,symbol:MediaSymbol,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text,enabled:Boolean=true) {
+    IconButton(enabled=enabled,onClick=onClick,modifier=Modifier.size(48.dp).semantics {contentDescription=label}) {
         MediaIcon(symbol,tint,filled)
     }
 }
@@ -402,12 +409,16 @@ private fun MediaInfo(photo:Photo,metadata:MediaMetadata?,onClose:()->Unit) {
         Column(Modifier.fillMaxWidth().padding(horizontal=24.dp).padding(bottom=32.dp).testTag("media-info")) {
             Text(photo.name,color=AppTheme.colors.text,fontSize=26.sp,fontWeight=FontWeight.SemiBold)
             Text(photo.date,color=AppTheme.colors.secondary,modifier=Modifier.padding(top=6.dp,bottom=24.dp))
-            val info = listOf("类型" to if(photo.video) "视频 · MP4" else "照片 · JPEG",
+            val info = listOf("类型" to (if(photo.remote!=null) photo.name.substringAfterLast('.',"未知格式").uppercase() else if(photo.video) "视频 · MP4" else "照片 · JPEG"),
                 "尺寸" to (metadata?.let {"${it.width} × ${it.height}"} ?: "读取中…"),
                 "文件大小" to (metadata?.let {"%.1f MB".format(it.bytes/1048576f)} ?: "读取中…"),
-                "来源" to "内置演示素材") + if(photo.video) listOf("时长" to mediaTime(metadata?.duration ?: 0L)) else emptyList()
-            info.forEach { (key,value) -> Row(Modifier.fillMaxWidth().padding(vertical=10.dp),horizontalArrangement=Arrangement.SpaceBetween) {
-                Text(key,color=AppTheme.colors.secondary);Text(value,color=AppTheme.colors.text)
+                "来源" to (photo.remote?.detail?.optString("relativePath") ?: if(photo.remote!=null) "NAS" else "内置演示素材")) + if(photo.video) listOf("时长" to mediaTime(metadata?.duration ?: 0L)) else emptyList()
+            val remoteInfo=photo.remote?.detail?.let { detail ->
+                listOf("状态" to detail.optString("state"),"拍摄时间" to detail.optString("takenAt",photo.date))+
+                    (detail.optJSONArray("tags")?.let {tags -> listOf("标签" to (0 until tags.length()).mapNotNull {tags.optJSONObject(it)?.optString("name")?.takeIf {name->name.isNotBlank()}}.joinToString(" · ").ifBlank {"无"})} ?: emptyList())
+            } ?: emptyList()
+            (info+remoteInfo).forEach { (key,value) -> Row(Modifier.fillMaxWidth().padding(vertical=10.dp),horizontalArrangement=Arrangement.SpaceBetween) {
+                Text(key,color=AppTheme.colors.secondary);Text(value,color=AppTheme.colors.text,modifier=Modifier.weight(1f).padding(start=20.dp),textAlign=androidx.compose.ui.text.style.TextAlign.End)
             } }
         }
     }
