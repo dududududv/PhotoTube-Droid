@@ -1,0 +1,5 @@
+<resources>
+    <!-- Native launch window; keep aligned with AppTheme background. -->
+    <color name="launch_background">#111312</color>
+    <bool name="light_system_bars">false</bool>
+</resources>

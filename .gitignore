@@ -7,3 +7,8 @@ local.properties
 .DS_Store
 .cxx/
 .externalNativeBuild/
+
+# Upstream binary demos are available in the downloaded source tree, not app inputs.
+third_party/AndroidLiquidGlass/androidApp/release/
+third_party/AndroidLiquidGlass/.idea/
+third_party/AndroidLiquidGlass/**/xcuserdata/
