@@ -22,7 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Immutable
-internal data class Photo(val id: Int, val name: String, val date: String, val favorite: Boolean = false, val video: Boolean = false) {
+internal data class Photo(val id: Int, val name: String, val date: String, val favorite: Boolean = false, val video: Boolean = false, val remote:RemoteMedia? = null) {
     val takenOn: java.time.LocalDate = java.time.LocalDate.parse(date, java.time.format.DateTimeFormatter.ofPattern("yyyy年M月d日"))
 }
 internal val photos = listOf(
@@ -86,13 +86,21 @@ internal object MediaMetadataCache {
 }
 @Composable
 internal fun rememberMediaMetadata(photo: Photo): MediaMetadata? {
+    photo.remote?.let { source ->
+        val detail=source.detail
+        val edit=detail?.optJSONObject("activeEdit")
+        return MediaMetadata(edit?.optInt("displayWidth") ?: detail?.optInt("width",source.asset.width ?: 1) ?: source.asset.width ?: 1,
+            edit?.optInt("displayHeight") ?: detail?.optInt("height",source.asset.height ?: 1) ?: source.asset.height ?: 1,
+            detail?.optLong("fileSize") ?: 0L,((source.asset.durationSec ?: 0.0)*1000).toLong())
+    }
     val context = LocalContext.current.applicationContext
     return produceState<MediaMetadata?>(MediaMetadataCache.peek(photo.id), photo.id) {
         value = runCatching { MediaMetadataCache.load(context, photo) }.getOrNull()
     }.value
 }
 @Composable
-internal fun MediaArtwork(photo: Photo, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop, description: String? = photo.name) {
+internal fun MediaArtwork(photo: Photo, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop, description: String? = photo.name,original:Boolean=false) {
+    if(photo.remote!=null) { RemoteArtwork(photo.remote,modifier,contentScale,description,original);return }
     if (photo.video) {
         rememberMediaMetadata(photo)?.poster?.let { Image(it.asImageBitmap(), description, modifier, contentScale = contentScale) }
     } else {
@@ -120,7 +128,7 @@ internal fun mediaCount(media:List<Photo>):String {
 @Composable
 internal fun MediaTransitionArtwork(photo:Photo,source:androidx.compose.ui.geometry.Rect?,progress:()->Float,exiting:Boolean=false) {
     val context=LocalContext.current.applicationContext
-    val bitmap=if(photo.video) rememberMediaMetadata(photo)?.poster else {
+    val bitmap=if(photo.remote!=null) rememberRemotePoster(photo.remote) else if(photo.video) rememberMediaMetadata(photo)?.poster else {
         val loaded by key(photo.id) {
             produceState<Bitmap?>(PhotoBitmapCache.peek(photo.id),photo.id) {
                 value=PhotoBitmapCache.load(context,photo.id)
@@ -147,7 +155,7 @@ internal fun MediaTransitionArtwork(photo:Photo,source:androidx.compose.ui.geome
         val cropWidth=minOf(image.width.toFloat(),image.height*frame.width/frame.height)
         val cropHeight=minOf(image.height.toFloat(),image.width*frame.height/frame.width)
         val path=androidx.compose.ui.graphics.Path().apply {
-            addRoundRect(androidx.compose.ui.geometry.RoundRect(frame,androidx.compose.ui.geometry.CornerRadius(22f*density*(1f-p))))
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(frame,androidx.compose.ui.geometry.CornerRadius((if(photo.remote!=null) 12f else 22f)*density*(1f-p))))
         }
         clipPath(path) {
             drawImage(image,alpha=opacity,

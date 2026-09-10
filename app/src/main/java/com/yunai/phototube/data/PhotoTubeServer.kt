@@ -21,6 +21,7 @@ internal data class MonthGroup(val key:String,val startsAt:String,val count:Long
 internal data class AssetPage(val items:List<RemoteAsset>,val nextCursor:String?)
 internal class ServerError(val code:String,override val message:String,val logId:String?=null,val retryable:Boolean=false):IOException(message)
 internal interface PhotoTubeEndpoints {
+    @GET("assets/{id}") suspend fun detail(@Path("id") id:String):retrofit2.Response<ResponseBody>
     @GET("health") suspend fun health():retrofit2.Response<ResponseBody>
     @GET("auth/session") suspend fun session():retrofit2.Response<ResponseBody>
     @POST("auth/login") suspend fun login(@Body body:RequestBody):retrofit2.Response<ResponseBody>
@@ -86,6 +87,9 @@ internal class PhotoTubeServer(context:Context,address:String,onUnauthorized:()-
         require(json.getString("status") in listOf("ok","degraded") && json.has("database") && json.has("aiWorker") && json.has("xmpExport")) {"该地址没有返回 PhotoTube 健康信息"}
         if(!json.getJSONObject("database").getBoolean("reachable")) throw ServerError("DATABASE_OFFLINE","服务器数据库不可用",retryable=true)
     }
+    suspend fun detail(id:String)=endpoints.detail(id).json()
+    fun original(id:String)=origin.newBuilder().addPathSegments("api/v1/assets").addPathSegment(id).addPathSegment("original").build().toString()
+    fun render(id:String,version:String)=origin.newBuilder().addPathSegments("api/v1/assets").addPathSegment(id).addPathSegment("edit-versions").addPathSegment(version).addPathSegment("render").build().toString()
     suspend fun session()=endpoints.session().json()
     suspend fun login(username:String,password:String) {
         val response=endpoints.login(JSONObject().put("username",username).put("password",password).toString().toRequestBody("application/json".toMediaType()))

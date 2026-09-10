@@ -53,8 +53,11 @@ internal fun rememberVideoPlayback(photo: Photo, active: Boolean): VideoPlayback
     var savedPlay by rememberSaveable(photo.id) { mutableStateOf(true) }
     var savedMuted by rememberSaveable(photo.id) { mutableStateOf(true) }
     var savedSpeed by rememberSaveable(photo.id) { mutableFloatStateOf(1f) }
-    val playback = remember(photo.id) { VideoPlayback(ExoPlayer.Builder(context).build().apply {
-        setMediaItem(MediaItem.fromUri("android.resource://${context.packageName}/${photo.id}"))
+    val playback = remember(photo.id) { VideoPlayback(ExoPlayer.Builder(context).apply {
+        photo.remote?.let { source -> setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+            androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(source.server.client))) }
+    }.build().apply {
+        setMediaItem(MediaItem.fromUri(photo.remote?.let {it.server.original(it.asset.id)} ?: "android.resource://${context.packageName}/${photo.id}"))
         setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
         setHandleAudioBecomingNoisy(true)
         volume = if(savedMuted) 0f else 1f

@@ -32,6 +32,7 @@ android { buildFeatures { compose = true }
 dependencies {
     implementation(project(":liquid-ui"))
     implementation("androidx.media3:media3-exoplayer:1.9.3")
+    implementation("androidx.media3:media3-datasource-okhttp:1.9.3")
     implementation("androidx.media3:media3-ui:1.9.3")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.material3:material3:1.4.0")

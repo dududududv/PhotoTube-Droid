@@ -95,6 +95,6 @@ internal fun PhotoGestures(
     }) {
         MediaArtwork(photo, Modifier.fillMaxSize().graphicsLayer {
             scaleX = scale; scaleY = scale; translationX = renderedPan.x; translationY = renderedPan.y
-        }, ContentScale.Fit, description = null)
+        }, ContentScale.Fit, description = null,original=true)
     }
 }
