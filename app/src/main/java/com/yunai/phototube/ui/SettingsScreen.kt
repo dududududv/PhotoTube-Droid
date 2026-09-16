@@ -83,7 +83,11 @@ internal fun SettingsScreen(
                     SettingsGroup { backdrop ->
                         ToggleRow("只看收藏", SettingsSymbol.FAVORITES, favoritesOnly, onFavorites, backdrop)
                         InsetDivider()
-                        ToggleRow("最新照片优先", SettingsSymbol.CALENDAR, newestFirst, onNewestFirst, backdrop)
+                        Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                            SettingsGlyph(SettingsSymbol.CALENDAR)
+                            Text("拍摄时间",color=AppTheme.colors.text,modifier=Modifier.weight(1f).padding(start=12.dp))
+                            Text("最新在前",color=AppTheme.colors.secondary)
+                        }
                     }
                     GroupFooter("选择图库显示的内容和照片排列顺序。")
                 }

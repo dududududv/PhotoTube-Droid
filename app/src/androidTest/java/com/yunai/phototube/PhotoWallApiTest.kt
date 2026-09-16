@@ -92,6 +92,26 @@ class PhotoWallApiTest {
         Assert.assertEquals("version hash",request.queryParameter("v"))
         Assert.assertEquals("MD",request.queryParameter("size"))
     }
+    @Test fun filtersMatchSummaryAndEveryCursorPage()=runBlocking {
+        val filters=WallFilters(WallKind.VIDEO,favoritesOnly=true,archived=true)
+        host.enqueue(json("""{"granularity":"MONTH","groups":[]}"""))
+        api.summary(filters)
+        val summary=host.takeRequest().requestUrl!!
+        host.enqueue(json("""{"items":[],"nextCursor":"filtered-cursor"}"""))
+        val source=AssetPagingSource(api,filters)
+        val first=source.load(PagingSource.LoadParams.Refresh(null,100,false)) as PagingSource.LoadResult.Page
+        val list=host.takeRequest().requestUrl!!
+        host.enqueue(json("""{"items":[],"nextCursor":null}"""))
+        source.load(PagingSource.LoadParams.Append(first.nextKey!!,100,false))
+        val next=host.takeRequest().requestUrl!!
+        filters.query().forEach {(key,value) ->
+            listOf(summary,list,next).forEach {Assert.assertEquals(value,it.queryParameter(key))}
+        }
+        Assert.assertEquals("filtered-cursor",next.queryParameter("cursor"))
+        Assert.assertNull(list.queryParameter("sort"))
+        Assert.assertFalse(WallFilters().query().containsKey("favorite"))
+        Assert.assertFalse(WallFilters().query().containsKey("kind"))
+    }
     @Test fun groupingDoesNotUseDeviceTimezone() {
         val groups=listOf(MonthGroup("2026-09","2026-09-01T00:00:00+08:00",2),MonthGroup("2026-08","2026-08-01T00:00:00+08:00",1))
         val media=RemoteAsset("x","PHOTO","BROWSABLE","2026-08-31T18:00:00Z",null,"x",null,null,null,false,null)

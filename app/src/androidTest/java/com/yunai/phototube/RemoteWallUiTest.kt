@@ -40,10 +40,11 @@ class RemoteWallUiTest {
                     return when {
                         url.encodedPath.endsWith("/health") -> json("""{"status":"ok","database":{"reachable":true},"aiWorker":null,"xmpExport":{}}""")
                         url.encodedPath.endsWith("/auth/session") -> json("""{"authenticated":true,"passwordSet":true}""")
-                        url.encodedPath.endsWith("/timeline-summary") -> json("""{"granularity":"MONTH","groups":[{"key":"2026-09","startsAt":"2026-09-01T00:00:00Z","count":105}]}""")
+                        url.encodedPath.endsWith("/timeline-summary") -> if(url.queryParameter("kind")=="VIDEO") json("""{"granularity":"MONTH","groups":[]}""") else json("""{"granularity":"MONTH","groups":[{"key":"2026-09","startsAt":"2026-09-01T00:00:00Z","count":105}]}""")
                         url.encodedPath.endsWith("/thumbnail") -> {images.incrementAndGet();MockResponse().setHeader("Content-Type","image/png").setBody(Buffer().write(bytes))}
                         url.encodedPath.endsWith("/assets") -> {
                             pages.incrementAndGet()
+                            if(url.queryParameter("kind")=="VIDEO") return json("""{"items":[],"nextCursor":null}""")
                             val first=url.queryParameter("cursor")==null
                             val items=JSONArray()
                             for(i in if(first) 0..99 else 100..104) items.put(JSONObject().put("id","fixture-$i").put("kind","PHOTO").put("state","BROWSABLE")
@@ -76,6 +77,12 @@ class RemoteWallUiTest {
             rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasTestTag("asset-fixture-104"))
             rule.onNodeWithTag("asset-fixture-104").assertIsDisplayed()
             Assert.assertEquals(2,pages.get())
+            rule.runOnIdle {vm.updateFilters(WallFilters(WallKind.VIDEO,true))}
+            rule.waitUntil(10000) {rule.onAllNodesWithText("没有符合条件的照片或视频").fetchSemanticsNodes().isNotEmpty()}
+            rule.onNodeWithTag("asset-fixture-104").assertDoesNotExist()
+            rule.onNodeWithText("清除筛选").performClick()
+            rule.waitUntil(10000) {rule.onAllNodesWithTag("asset-fixture-0").fetchSemanticsNodes().isNotEmpty()}
+            Assert.assertFalse(vm.filters.active)
         } finally {
             rule.runOnIdle {store.clear()}
             host.shutdown()

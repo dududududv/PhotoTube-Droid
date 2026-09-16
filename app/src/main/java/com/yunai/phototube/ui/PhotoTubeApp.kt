@@ -232,7 +232,7 @@ private fun PhotoTubeContent() {
             Toolbar(
                 backdrop = backdrop, surfaceColor = AppTheme.colors.glass.copy(alpha = glassStrength),
                 modifier = Modifier.align(Alignment.TopCenter).absolutePadding(left = cornerInsets.left, right = cornerInsets.right, top = cornerInsets.top),
-                isLibrary = tab == 0, actionVisible = panel != "filter" && panel != "search", onAction = { panel = if (tab == 0) "filter" else "settings" }
+                filterActive=wall.filters.active, isLibrary = tab == 0, actionVisible = panel != "filter" && panel != "search", onAction = { panel = if (tab == 0) "filter" else "settings" }
             )
             Row(
                 Modifier.align(Alignment.BottomCenter).absolutePadding(left = cornerInsets.left, right = cornerInsets.right, bottom = cornerInsets.bottom).fillMaxWidth(),
@@ -259,8 +259,8 @@ private fun PhotoTubeContent() {
             onValue={if(tab==0) query=it else albumQuery=it},onOpen=::beginSearch,onClose=::endSearch,
             backdrop=backdrop,insets=cornerInsets,collapsedSize=barHeight,iconSize=bottomIconSize,opacity=glassStrength,
             resultCount=if(tab==0) null else visibleAlbums.size)
-        if (panel == "filter") FilterMenu(backdrop,cornerInsets,glassStrength,favoritesOnly,newestFirst,
-            onFavorites={favoritesOnly=it},onOrder={newestFirst=it},onDismiss={panel=null},preview=true)
+        if (panel == "filter") FilterMenu(backdrop,cornerInsets,glassStrength,wall.filters,
+            onChange=wall::updateFilters,onDismiss={panel=null})
         if (panel?.startsWith("album:") == true) {
             val album = albums.first { it.key == panel!!.substringAfter(":") }
             AlbumDetail(album.title,albumMedia(album.key).filter {it.id !in removedIds},favoriteIds.toSet(),
@@ -269,7 +269,7 @@ private fun PhotoTubeContent() {
         }
         if (panel == "settings") {
             SettingsScreen(
-                haptics, { haptics = it }, favoritesOnly, { favoritesOnly = it }, newestFirst, { newestFirst = it },
+                haptics, { haptics = it }, wall.filters.favoritesOnly, { wall.updateFilters(wall.filters.copy(favoritesOnly=it)) }, true, {},
                 glassStrength, theme::updateOpacity,
                 onServer = { panel=null;tab=0;wall.configure() },
                 onAppearance = theme::updateGlass, onVideo = { panel = null; showVideo = true }, onClose = { panel = null }
@@ -290,7 +290,7 @@ private fun PhotoTubeContent() {
 @Composable
 private fun Toolbar(
     backdrop: Backdrop, surfaceColor: Color, modifier: Modifier = Modifier,
-    isLibrary: Boolean, actionVisible: Boolean = true, onAction: () -> Unit
+    isLibrary: Boolean, filterActive:Boolean=false, actionVisible: Boolean = true, onAction: () -> Unit
 ) {
     Row(modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
         if (!isLibrary) Text("相册", fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = AppTheme.colors.text)
@@ -301,7 +301,7 @@ private fun Toolbar(
             modifier = Modifier.size(48.dp).testTag(if (isLibrary) "filter-button" else "settings-button")
                 .semantics { contentDescription = if (isLibrary) "筛选" else "设置" }
         ) {
-            Icon(if (isLibrary) Icons.Rounded.FilterList else Icons.Outlined.Settings, null, Modifier.size(22.dp), tint = AppTheme.colors.text)
+            Icon(if (isLibrary) Icons.Rounded.FilterList else Icons.Outlined.Settings, null, Modifier.size(22.dp), tint = if(isLibrary && filterActive) AppTheme.colors.accent else AppTheme.colors.text)
         }
     }
 }

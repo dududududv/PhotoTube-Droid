@@ -25,8 +25,8 @@ internal interface PhotoTubeEndpoints {
     @GET("health") suspend fun health():retrofit2.Response<ResponseBody>
     @GET("auth/session") suspend fun session():retrofit2.Response<ResponseBody>
     @POST("auth/login") suspend fun login(@Body body:RequestBody):retrofit2.Response<ResponseBody>
-    @GET("assets/timeline-summary") suspend fun summary(@Query("granularity") granularity:String="MONTH",@Query("archived") archived:Boolean=false):retrofit2.Response<ResponseBody>
-    @GET("assets") suspend fun assets(@Query("cursor") cursor:String?,@Query("limit") limit:Int=100,@Query("archived") archived:Boolean=false):retrofit2.Response<ResponseBody>
+    @GET("assets/timeline-summary") suspend fun summary(@Query("granularity") granularity:String="MONTH",@QueryMap filters:Map<String,String> = WallFilters().query()):retrofit2.Response<ResponseBody>
+    @GET("assets") suspend fun assets(@Query("cursor") cursor:String?,@Query("limit") limit:Int=100,@QueryMap filters:Map<String,String> = WallFilters().query()):retrofit2.Response<ResponseBody>
 }
 internal fun JSONObject.nullString(key:String)=if(isNull(key)) null else getString(key)
 internal fun JSONObject.nullInt(key:String)=if(isNull(key)) null else getInt(key)
@@ -96,14 +96,14 @@ internal class PhotoTubeServer(context:Context,address:String,onUnauthorized:()-
         if(response.code()!=204) {response.json();throw ServerError("INVALID_RESPONSE","登录响应格式不正确")}
         response.body()?.close()
     }
-    suspend fun summary():List<MonthGroup> {
-        val json=endpoints.summary().json()
+    suspend fun summary(filters:WallFilters=WallFilters()):List<MonthGroup> {
+        val json=endpoints.summary(filters=filters.query()).json()
         require(json.getString("granularity")=="MONTH")
         val groups=json.getJSONArray("groups")
         return (0 until groups.length()).map {i -> groups.getJSONObject(i).let {MonthGroup(it.getString("key"),it.getString("startsAt"),it.getLong("count"))}}
     }
-    suspend fun assets(cursor:String?):AssetPage {
-        val json=endpoints.assets(cursor).json();val items=json.getJSONArray("items")
+    suspend fun assets(cursor:String?,filters:WallFilters=WallFilters()):AssetPage {
+        val json=endpoints.assets(cursor,filters=filters.query()).json();val items=json.getJSONArray("items")
         return AssetPage((0 until items.length()).map {i -> items.getJSONObject(i).let {
             RemoteAsset(it.getString("id"),it.getString("kind"),it.getString("state"),it.getString("takenAt"),it.nullInt("takenAtOffsetMinutes"),
                 it.getString("fileName"),it.nullString("contentHash"),it.nullInt("width"),it.nullInt("height"),it.getBoolean("favorite"),if(it.isNull("durationSec")) null else it.getDouble("durationSec"))
@@ -124,11 +124,11 @@ internal class AssetCursor(val token:String?,val previous:AssetCursor?=null) {
     override fun equals(other:Any?)=other is AssetCursor && token==other.token
     override fun hashCode()=token?.hashCode() ?: 0
 }
-internal class AssetPagingSource(private val server:PhotoTubeServer):PagingSource<AssetCursor,RemoteAsset>() {
+internal class AssetPagingSource(private val server:PhotoTubeServer,private val filters:WallFilters=WallFilters()):PagingSource<AssetCursor,RemoteAsset>() {
     override fun getRefreshKey(state:PagingState<AssetCursor,RemoteAsset>):AssetCursor?=null
     override suspend fun load(params:LoadParams<AssetCursor>):LoadResult<AssetCursor,RemoteAsset> = try {
         val key=params.key ?: AssetCursor(null)
-        val page=server.assets(key.token)
+        val page=server.assets(key.token,filters)
         if(page.nextCursor!=null && page.nextCursor==key.token) throw ServerError("INVALID_RESPONSE","服务器返回了重复的分页游标")
         LoadResult.Page(page.items,prevKey=key.previous,nextKey=page.nextCursor?.let {AssetCursor(it,key)})
     } catch(error:CancellationException) {throw error} catch(error:Exception) {

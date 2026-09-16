@@ -43,6 +43,8 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
         private set
     var pageFlow by androidx.compose.runtime.mutableStateOf<Flow<PagingData<WallEntry>>?>(null)
         private set
+    var filters by androidx.compose.runtime.mutableStateOf(WallFilters())
+        private set
     private var operation:Job?=null
     private var pagingScope:CoroutineScope?=null
     init {if(prefs.contains("base_url")) connect(address)}
@@ -70,7 +72,7 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
                 }
             } catch(cancel:CancellationException) {candidate?.takeIf {it!==server}?.dispose();throw cancel}
             catch(problem:Exception) {candidate?.takeIf {it!==server}?.dispose();error=problem;if(stage!=ConnectionStage.READY) stage=if(problem is ServerError && problem.code=="UNAUTHORIZED") ConnectionStage.LOGIN else ConnectionStage.ADDRESS}
-            finally {busy=false}
+            finally {if(currentCoroutineContext().isActive) busy=false}
         }
     }
     fun login(username:String,password:String) {
@@ -84,25 +86,37 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
                 if(!api.session().getBoolean("authenticated")) throw ServerError("UNAUTHORIZED","登录会话未建立，请检查服务器设置")
                 loadWall(api)
             } catch(cancel:CancellationException) {throw cancel} catch(problem:Exception) {error=problem}
-            finally {busy=false}
+            finally {if(currentCoroutineContext().isActive) busy=false}
         }
+    }
+    fun updateFilters(value:WallFilters) {
+        if(value==filters) return
+        filters=value
+        if(stage!=ConnectionStage.READY) return
+        operation?.cancel()
+        pagingScope?.cancel()
+        pageFlow=null;groups=emptyList();error=null;busy=false
+        refresh()
     }
     fun refresh() {
         if(busy) return
         val api=server ?: return
         operation=viewModelScope.launch {
             busy=true;error=null
-            try {loadWall(api)} catch(cancel:CancellationException) {throw cancel} catch(problem:Exception) {error=problem} finally {busy=false}
+            try {loadWall(api)} catch(cancel:CancellationException) {throw cancel} catch(problem:Exception) {error=problem} finally {if(currentCoroutineContext().isActive) busy=false}
         }
     }
     private suspend fun loadWall(api:PhotoTubeServer) {
         stage=ConnectionStage.READY
-        val summary=api.summary()
+        val selected=filters
+        val summary=api.summary(selected)
+        currentCoroutineContext().ensureActive()
+        if(selected!=filters) return
         pagingScope?.cancel()
         val scope=CoroutineScope(viewModelScope.coroutineContext+SupervisorJob(viewModelScope.coroutineContext[Job]))
         pagingScope=scope
         groups=summary
-        pageFlow=Pager(PagingConfig(pageSize=100,initialLoadSize=100,prefetchDistance=16,enablePlaceholders=false,maxSize=500)) {AssetPagingSource(api)}
+        pageFlow=Pager(PagingConfig(pageSize=100,initialLoadSize=100,prefetchDistance=16,enablePlaceholders=false,maxSize=500)) {AssetPagingSource(api,selected)}
             .flow.map {data -> data.map<RemoteAsset,WallEntry> {WallEntry.Asset(it)}.insertSeparators {before,after ->
                 val next=(after as? WallEntry.Asset)?.value ?: return@insertSeparators null
                 val key=monthKey(next,summary)

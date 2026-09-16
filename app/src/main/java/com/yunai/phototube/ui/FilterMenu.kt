@@ -1,5 +1,7 @@
 package com.yunai.phototube.ui
 
+import com.yunai.phototube.data.WallFilters
+import com.yunai.phototube.data.WallKind
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -32,13 +34,13 @@ import kotlinx.coroutines.launch
 
 /** One anchored glass surface grows from the source button and hosts the menu stack. */
 @Composable
-internal fun FilterMenu(backdrop:Backdrop,insets:CornerInsets,opacity:Float,favoritesOnly:Boolean,newestFirst:Boolean,
-    onFavorites:(Boolean)->Unit,onOrder:(Boolean)->Unit,onDismiss:()->Unit,preview:Boolean=false) {
+internal fun FilterMenu(backdrop:Backdrop,insets:CornerInsets,opacity:Float,filters:WallFilters,
+    onChange:(WallFilters)->Unit,onDismiss:()->Unit) {
     val expansion=remember {Animatable(0f)}
     val scope=rememberCoroutineScope()
     var closing by remember {mutableStateOf(false)}
     var sorting by remember {mutableStateOf(false)}
-    val expandedHeight by animateDpAsState(if(sorting) 156.dp else 208.dp,spring(.9f,550f),label="filter-menu-height")
+    val expandedHeight by animateDpAsState(if(sorting) 204.dp else 292.dp,spring(.9f,550f),label="filter-menu-height")
     val colors=AppTheme.colors
     val glass=LocalGlassAppearance.current
     fun close() {
@@ -60,13 +62,13 @@ internal fun FilterMenu(backdrop:Backdrop,insets:CornerInsets,opacity:Float,favo
                 effects={vibrancy();blur((glass.blur+12f*p).dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
                 onDrawSurface={drawRect(colors.glass.copy(alpha=opacity))})
             .clip(RoundedCornerShape(24.dp)).clickable(interactionSource=null,indication=null) {}
-            .testTag("filter-menu").semantics {paneTitle=if(sorting) "排列顺序" else "筛选"}) {
+            .testTag("filter-menu").semantics {paneTitle=if(sorting) "媒体类型" else "筛选"}) {
             Icon(Icons.Rounded.FilterList,null,Modifier.align(Alignment.TopEnd).padding(13.dp).size(22.dp)
                 .graphicsLayer {alpha=1f-contentAlpha},tint=colors.text)
             Column(Modifier.requiredWidth(menuWidth).align(Alignment.TopEnd).graphicsLayer {alpha=contentAlpha}) {
                 Row(Modifier.fillMaxWidth().height(48.dp).padding(start=18.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
                     if(sorting) IconButton({sorting=false},Modifier.size(36.dp).semantics {contentDescription="返回筛选菜单"}) {MediaIcon(MediaSymbol.BACK,colors.text)}
-                    Text(if(sorting) "排列顺序" else if(preview) "筛选 · 界面预览" else "筛选",fontSize=14.sp,fontWeight=FontWeight.SemiBold,color=colors.secondary,modifier=Modifier.weight(1f))
+                    Text(if(sorting) "媒体类型" else "筛选",fontSize=14.sp,fontWeight=FontWeight.SemiBold,color=colors.secondary,modifier=Modifier.weight(1f))
                     TextButton({close()},enabled=!closing) {Text("完成",color=colors.accent)}
                 }
                 AnimatedContent(sorting,transitionSpec={
@@ -75,17 +77,21 @@ internal fun FilterMenu(backdrop:Backdrop,insets:CornerInsets,opacity:Float,favo
                 },label="filter-submenu") {sub ->
                     Column {
                         if(sub) {
-                            MenuChoice("最新在前",newestFirst,!closing) {onOrder(true);sorting=false}
-                            MenuChoice("最早在前",!newestFirst,!closing) {onOrder(false);sorting=false}
+                            MenuChoice("照片与视频",filters.kind==null,!closing) {onChange(filters.copy(kind=null));sorting=false}
+                            WallKind.entries.forEach {kind ->
+                                MenuChoice("仅${kind.label}",filters.kind==kind,!closing) {onChange(filters.copy(kind=kind));sorting=false}
+                            }
                         } else {
-                            MenuChoice("全部照片与视频",!favoritesOnly,!closing) {onFavorites(false)}
-                            MenuChoice("只看收藏",favoritesOnly,!closing) {onFavorites(!favoritesOnly)}
                             Row(Modifier.fillMaxWidth().height(52.dp).clickable(enabled=!closing){sorting=true}.padding(horizontal=18.dp)
-                                .semantics {contentDescription="排列顺序，${if(newestFirst) "最新在前" else "最早在前"}，子菜单"},verticalAlignment=Alignment.CenterVertically) {
-                                Text("排列顺序",color=colors.text,fontSize=16.sp,modifier=Modifier.weight(1f))
-                                Text(if(newestFirst) "最新" else "最早",color=colors.secondary,fontSize=13.sp)
+                                .semantics {contentDescription="媒体类型，${filters.kind?.label ?: "照片与视频"}，子菜单"},verticalAlignment=Alignment.CenterVertically) {
+                                Text("媒体类型",color=colors.text,fontSize=16.sp,modifier=Modifier.weight(1f))
+                                Text(filters.kind?.label ?: "全部",color=colors.secondary,fontSize=13.sp)
                                 Box(Modifier.size(24.dp).graphicsLayer {rotationZ=180f}) {MediaIcon(MediaSymbol.BACK,colors.secondary)}
                             }
+                            MenuChoice("只看收藏",filters.favoritesOnly,!closing) {onChange(filters.copy(favoritesOnly=!filters.favoritesOnly))}
+                            MenuChoice("只看归档",filters.archived,!closing) {onChange(filters.copy(archived=!filters.archived))}
+                            TextButton({onChange(WallFilters())},enabled=filters.active && !closing,modifier=Modifier.fillMaxWidth().height(48.dp)) {Text("清除筛选")}
+                            Text("按拍摄时间 · 最新在前",color=colors.secondary,fontSize=12.sp,modifier=Modifier.padding(horizontal=18.dp,vertical=10.dp))
                         }
                     }
                 }

@@ -59,7 +59,7 @@ internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier
                     Row(Modifier.fillMaxWidth().height(48.dp),verticalAlignment=Alignment.CenterVertically) {
                         Text("图库",fontSize=30.sp,fontWeight=FontWeight.SemiBold,color=colors.text,modifier=Modifier.weight(1f))
                     }
-                    Text("${vm.groups.sumOf {it.count}} 项内容",color=colors.secondary,fontSize=13.sp,modifier=Modifier.padding(top=8.dp,bottom=16.dp))
+                    Text("${vm.groups.sumOf {it.count}} 项内容"+(if(vm.filters.active) " · ${vm.filters.label}" else ""),color=colors.secondary,fontSize=13.sp,modifier=Modifier.padding(top=8.dp,bottom=16.dp))
                     if(vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     vm.error?.let {Failure(it,vm::refresh)}
                 }
@@ -68,8 +68,9 @@ internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier
             if(items.loadState.refresh is LoadState.Error) item {Failure((items.loadState.refresh as LoadState.Error).error,items::retry)}
             if(items.loadState.refresh is LoadState.NotLoading && items.itemCount==0) item {
                 Column(Modifier.padding(vertical=64.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                    Text("还没有照片",color=colors.text,fontSize=20.sp)
-                    Text("请先在服务端创建相册、指定 NAS 文件夹并手动扫描。",color=colors.secondary,modifier=Modifier.padding(top=12.dp))
+                    Text(if(vm.filters.active) "没有符合条件的照片或视频" else "还没有照片",color=colors.text,fontSize=20.sp)
+                    if(vm.filters.active) TextButton({vm.updateFilters(WallFilters())}) {Text("清除筛选")}
+                    else Text("请先在服务端创建相册、指定 NAS 文件夹并手动扫描。",color=colors.secondary,modifier=Modifier.padding(top=12.dp))
                 }
             }
             items(rows.size,key={rows[it].key}) {rowIndex ->
