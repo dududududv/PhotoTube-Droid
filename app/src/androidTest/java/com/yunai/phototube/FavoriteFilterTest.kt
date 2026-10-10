@@ -30,7 +30,6 @@ class FavoriteFilterTest {
         }}
         rule.onNodeWithText("清除筛选").performScrollTo().performClick()
         rule.runOnIdle {Assert.assertEquals(WallFilters(keyword="合成搜索"),latest)}
-        rule.onNodeWithText("收藏状态").performScrollTo().performClick()
         rule.onNodeWithText("只看未收藏").performScrollTo().performClick()
         rule.waitForIdle()
         rule.runOnIdle {Assert.assertEquals(false,latest.favorite);Assert.assertEquals(1,dismissals)}
@@ -59,14 +58,12 @@ class FavoriteFilterTest {
             else androidx.compose.material3.TextButton({shown=true}) {androidx.compose.material3.Text("打开")}
             }
         }}
-        rule.onNodeWithText("收藏状态").performClick()
         rule.onNodeWithText("只看未收藏").performClick()
         rule.waitForIdle()
         rule.runOnIdle {Assert.assertEquals(false,latest.favorite);Assert.assertEquals(1,dismissals)}
         rule.onNodeWithText("打开").performClick()
-        rule.onNodeWithText("收藏状态").performClick()
         rule.onNodeWithText("只看未收藏").assertIsSelected()
-        rule.onNodeWithText("全部").performClick();rule.waitForIdle()
+        rule.onNodeWithText("不限收藏").performClick();rule.waitForIdle()
         rule.runOnIdle {Assert.assertNull(latest.favorite);Assert.assertEquals("旅行照",latest.keyword)}
         rule.onNodeWithText("打开").performClick()
         rule.onNodeWithText("只看归档").assertIsOff().performClick()

@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
 import com.yunai.phototube.ui.theme.MediaColors
 
-internal enum class MediaSymbol { BACK, MORE, SHARE, HEART, INFO, TRASH, PLAY, PAUSE, SOUND, MUTED, GRID, EDIT }
+internal enum class MediaSymbol { BACK, MORE, SHARE, HEART, INFO, TRASH, PLAY, PAUSE, SOUND, MUTED, GRID, EDIT, PHOTO, VIDEO, HEART_OFF, ARCHIVE, CALENDAR, FOLDER, TAG }
 @Composable
 internal fun MediaIcon(symbol: MediaSymbol, tint: Color = MediaColors.text, filled: Boolean = false) {
     Canvas(Modifier.size(23.dp)) {
@@ -41,10 +41,12 @@ internal fun MediaIcon(symbol: MediaSymbol, tint: Color = MediaColors.text, fill
                     },tint,style=Stroke(1.7f,cap=StrokeCap.Round,join=StrokeJoin.Round))
                     line(Offset(12f,15f),Offset(12f,2f)); path(listOf(Offset(8f,6f),Offset(12f,2f),Offset(16f,6f)))
                 }
-                MediaSymbol.HEART -> drawPath(Path().apply {
+                MediaSymbol.HEART, MediaSymbol.HEART_OFF -> { drawPath(Path().apply {
                     moveTo(12f,21f); cubicTo(8f,18f,2f,13f,2f,8f); cubicTo(2f,2f,9f,1f,12f,6f)
                     cubicTo(15f,1f,22f,2f,22f,8f); cubicTo(22f,13f,16f,18f,12f,21f); close()
                 },tint,style = if(filled) androidx.compose.ui.graphics.drawscope.Fill else Stroke(1.7f, cap=StrokeCap.Round, join=StrokeJoin.Round))
+                    if(symbol==MediaSymbol.HEART_OFF) line(Offset(3f,3f),Offset(21f,21f))
+                }
                 MediaSymbol.INFO -> {
                     drawCircle(tint,9f,Offset(12f,12f),style=Stroke(1.7f)); drawCircle(tint,1f,Offset(12f,7f))
                     path(listOf(Offset(10f,11f),Offset(12f,11f),Offset(12f,17f),Offset(14f,17f)))
@@ -72,6 +74,38 @@ internal fun MediaIcon(symbol: MediaSymbol, tint: Color = MediaColors.text, fill
                     },tint)
                     if(symbol == MediaSymbol.MUTED) {line(Offset(16f,9f),Offset(22f,15f));line(Offset(16f,15f),Offset(22f,9f))}
                     else {drawArc(tint,-50f,100f,false,Offset(9f,5f),Size(12f,14f),style=Stroke(1.6f,cap=StrokeCap.Round))}
+                }
+                MediaSymbol.PHOTO -> {
+                    drawRoundRect(tint,Offset(2.5f,3.5f),Size(19f,17f),CornerRadius(3f),style=Stroke(1.7f))
+                    drawCircle(tint,1.6f,Offset(8f,8.5f))
+                    path(listOf(Offset(4f,18f),Offset(10f,12f),Offset(13f,15f),Offset(16f,11f),Offset(20f,16f)))
+                }
+                MediaSymbol.VIDEO -> {
+                    drawRoundRect(tint,Offset(2f,5f),Size(14f,14f),CornerRadius(3f),style=Stroke(1.7f))
+                    path(listOf(Offset(16f,9f),Offset(22f,6f),Offset(22f,18f),Offset(16f,15f)))
+                }
+                MediaSymbol.ARCHIVE -> {
+                    drawRoundRect(tint,Offset(3f,3.5f),Size(18f,4.5f),CornerRadius(1.2f),style=Stroke(1.7f))
+                    path(listOf(Offset(4.5f,8f),Offset(4.5f,20f),Offset(19.5f,20f),Offset(19.5f,8f)))
+                    line(Offset(9f,12f),Offset(15f,12f))
+                }
+                MediaSymbol.CALENDAR -> {
+                    drawRoundRect(tint,Offset(3f,5f),Size(18f,16f),CornerRadius(3f),style=Stroke(1.7f))
+                    line(Offset(3f,10f),Offset(21f,10f))
+                    line(Offset(8f,3f),Offset(8f,7f));line(Offset(16f,3f),Offset(16f,7f))
+                    for(x in listOf(8f,12f,16f)) for(y in listOf(14f,17.5f)) drawCircle(tint,.8f,Offset(x,y))
+                }
+                MediaSymbol.FOLDER -> drawPath(Path().apply {
+                    moveTo(3f,8f);lineTo(3f,6f);quadraticTo(3f,4f,5f,4f);lineTo(9f,4f)
+                    lineTo(12f,7f);lineTo(19f,7f);quadraticTo(21f,7f,21f,9f)
+                    lineTo(21f,18f);quadraticTo(21f,20f,19f,20f);lineTo(5f,20f)
+                    quadraticTo(3f,20f,3f,18f);close()
+                },tint,style=Stroke(1.7f,cap=StrokeCap.Round,join=StrokeJoin.Round))
+                MediaSymbol.TAG -> {
+                    drawPath(Path().apply {
+                        moveTo(3f,4f);lineTo(11f,4f);lineTo(21f,14f);lineTo(14f,21f);lineTo(3f,10f);close()
+                    },tint,style=Stroke(1.7f,cap=StrokeCap.Round,join=StrokeJoin.Round))
+                    drawCircle(tint,1.2f,Offset(7.5f,8f))
                 }
                 MediaSymbol.GRID -> for(x in listOf(3f,14f)) for(y in listOf(3f,14f)) drawRoundRect(tint,Offset(x,y),Size(7f,7f),CornerRadius(1.5f),style=Stroke(1.7f))
             }

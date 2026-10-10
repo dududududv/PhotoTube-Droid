@@ -34,7 +34,7 @@ class FilterScopeLayoutTest {
                 }
             }
         }}
-        rule.onNodeWithText("日期、目录与标签").performScrollTo().performClick()
+        rule.onNodeWithText("拍摄日期").performScrollTo().performClick()
         rule.onNodeWithText("应用").assertDoesNotExist()
         rule.onNodeWithText("开始").performScrollTo().performClick()
         rule.onNodeWithText("输入日期").performScrollTo().performClick()
@@ -47,7 +47,7 @@ class FilterScopeLayoutTest {
         rule.onNodeWithContentDescription("输入日期").performScrollTo().performTextReplacement("2026-09-01")
         rule.onNodeWithContentDescription("输入日期").performImeAction()
         rule.runOnIdle {assertNotNull(applied.takenFrom);assertNotNull(applied.takenTo)}
-        rule.onNodeWithText("重置高级条件").performScrollTo().performClick()
+        rule.onNodeWithText("清除日期").performScrollTo().performClick()
         rule.runOnIdle {assertFalse(applied.hasScope)}
         rule.onNodeWithText("完成").assertDoesNotExist()
     }

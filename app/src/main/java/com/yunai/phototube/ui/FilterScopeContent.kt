@@ -34,28 +34,27 @@ import java.time.*
 internal fun filterScopeError(filters:WallFilters):String? =
     if(filters.takenFrom!=null && filters.takenTo!=null && Instant.parse(filters.takenFrom)>Instant.parse(filters.takenTo)) "结束日期不能早于开始日期" else null
 
-private fun dateLabel(value:String?):String = value?.let {Instant.parse(it).atZone(ZoneId.systemDefault()).toLocalDate().toString()} ?: "不限"
+internal fun dateLabel(value:String?):String = value?.let {Instant.parse(it).atZone(ZoneId.systemDefault()).toLocalDate().toString()} ?: "不限"
 
 /** Every picker stays inside FilterMenu's surface; none opens a new window. */
 @Composable
 internal fun FilterScopeContent(page:FilterPage,selection:WallFilters,onSelection:(WallFilters)->Unit,onPage:(FilterPage)->Unit,catalog:FilterCatalog,onClose:()->Unit,onContentHeight:(Int)->Unit,onCatalogRows:(Int)->Unit) {
     when(page) {
-        FilterPage.SCOPE -> Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).onSizeChanged {onContentHeight(it.height)}.testTag("filter-scope")) {
-            ScopeLabel("拍摄日期")
-            FilterNavigationRow("开始",dateLabel(selection.takenFrom)) {onPage(FilterPage.FROM)}
-            FilterNavigationRow("结束",dateLabel(selection.takenTo)) {onPage(FilterPage.TO)}
-            FilterSeparator()
-            FilterNavigationRow("目录",selection.folderPath ?: if(selection.libraryId!=null) "整个媒体库" else "全部") {onPage(FilterPage.FOLDERS)}
-            FilterSeparator();ScopeLabel("标签组合")
-            FilterNavigationRow("全部包含",if(selection.tagsAll.isEmpty()) "不限" else "${selection.tagsAll.size} 个") {onPage(FilterPage.ALL_TAGS)}
-            FilterNavigationRow("任一包含",if(selection.tagsAny.isEmpty()) "不限" else "${selection.tagsAny.size} 个") {onPage(FilterPage.ANY_TAGS)}
-            FilterNavigationRow("排除",if(selection.tagsExclude.isEmpty()) "不限" else "${selection.tagsExclude.size} 个") {onPage(FilterPage.EXCLUDE_TAGS)}
-            filterScopeError(selection)?.let {Text(it,Modifier.padding(horizontal=18.dp),color=AppTheme.colors.destructive,fontSize=13.sp)}
-            FilterTextAction("重置高级条件",selection.hasScope) {onSelection(selection.copy(libraryId=null,folderPath=null,takenFrom=null,takenTo=null,tagsAll=emptySet(),tagsAny=emptySet(),tagsExclude=emptySet()))}
+        FilterPage.DATES, FilterPage.TAGS -> Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).wrapContentHeight(align=Alignment.Top,unbounded=true).onSizeChanged {onContentHeight(it.height)}.padding(vertical=6.dp)) {
+            if(page==FilterPage.DATES) {
+                FilterNavigationRow("开始",dateLabel(selection.takenFrom)) {onPage(FilterPage.FROM)}
+                FilterNavigationRow("结束",dateLabel(selection.takenTo)) {onPage(FilterPage.TO)}
+                if(selection.takenFrom!=null || selection.takenTo!=null) FilterTextAction("清除日期") {onSelection(selection.copy(takenFrom=null,takenTo=null))}
+            } else {
+                FilterNavigationRow("全部包含",if(selection.tagsAll.isEmpty()) "" else "${selection.tagsAll.size} 个标签") {onPage(FilterPage.ALL_TAGS)}
+                FilterNavigationRow("任一包含",if(selection.tagsAny.isEmpty()) "" else "${selection.tagsAny.size} 个标签") {onPage(FilterPage.ANY_TAGS)}
+                FilterNavigationRow("排除",if(selection.tagsExclude.isEmpty()) "" else "${selection.tagsExclude.size} 个标签") {onPage(FilterPage.EXCLUDE_TAGS)}
+                if(selection.tagsAll.isNotEmpty() || selection.tagsAny.isNotEmpty() || selection.tagsExclude.isNotEmpty()) FilterTextAction("清除标签条件") {onSelection(selection.copy(tagsAll=emptySet(),tagsAny=emptySet(),tagsExclude=emptySet()))}
+            }
         }
         FilterPage.FROM,FilterPage.TO -> key(page) {
             FilterCalendar(if(page==FilterPage.FROM) selection.takenFrom else selection.takenTo,page==FilterPage.TO,if(page==FilterPage.FROM) selection.takenTo else selection.takenFrom,onContentHeight) {value ->
-                onSelection(if(page==FilterPage.FROM) selection.copy(takenFrom=value) else selection.copy(takenTo=value));onPage(FilterPage.SCOPE)
+                onSelection(if(page==FilterPage.FROM) selection.copy(takenFrom=value) else selection.copy(takenTo=value));onPage(FilterPage.DATES)
             }
         }
         FilterPage.FOLDERS -> FilterFolders(catalog,selection,{onSelection(it);onClose()},onCatalogRows)
@@ -82,7 +81,7 @@ private fun FilterCalendar(value:String?,end:Boolean,otherBound:String?,onConten
     }
     val valid=parsed!=null && allowed(parsed)
     val colors=AppTheme.colors
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).onSizeChanged {onContentHeight(it.height)}.testTag("filter-calendar")) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).wrapContentHeight(align=Alignment.Top,unbounded=true).onSizeChanged {onContentHeight(it.height)}.testTag("filter-calendar")) {
         MenuChoice("不限",value==null,radio=true) {onSelect(null)}
         FilterSeparator()
         if(typing) {
@@ -194,4 +193,11 @@ private fun CatalogStatus(state:CombinedLoadStates,count:Int,empty:String,retry:
     val error=(state.refresh as? LoadState.Error) ?: (state.append as? LoadState.Error)
     if(error!=null) {ScopeLabel("加载失败，请重试");FilterTextAction("重试",onClick=retry)}
     else if(state.refresh is LoadState.NotLoading && count==0) ScopeLabel(empty)
+}
+
+internal fun filterDateSummary(filters:WallFilters):String = when {
+    filters.takenFrom!=null && filters.takenTo!=null -> "${dateLabel(filters.takenFrom)} 至 ${dateLabel(filters.takenTo)}"
+    filters.takenFrom!=null -> "${dateLabel(filters.takenFrom)} 起"
+    filters.takenTo!=null -> "截至 ${dateLabel(filters.takenTo)}"
+    else -> ""
 }
