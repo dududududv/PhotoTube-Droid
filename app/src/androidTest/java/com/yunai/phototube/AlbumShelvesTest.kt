@@ -31,7 +31,7 @@ class AlbumShelvesTest {
         val settings=rule.onNodeWithTag("settings-button").fetchSemanticsNode().boundsInRoot
         assertEquals(create.height,settings.height,.5f)
         assertEquals(create.width,settings.width,.5f)
-        val a=rule.onNodeWithTag("album-mock-album").fetchSemanticsNode().boundsInRoot
+        val a=rule.onNodeWithTag("remote-album-cover-mock-album",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
         assertEquals(a.width,a.height,.5f)
         // Wait for the bundled image decoder before visual evidence.
         Thread.sleep(800);shot("album-shelves-home")
@@ -39,9 +39,26 @@ class AlbumShelvesTest {
         rule.onNodeWithContentDescription("返回相册列表").performClick()
         rule.waitUntil(10000) {rule.onAllNodesWithTag("album-detail").fetchSemanticsNodes().isEmpty()}
         rule.onNodeWithTag("album-mock-album").assertIsDisplayed()
-        rule.onNodeWithTag("album-section-all").performClick();waitTag("album-mock-album")
-        shot("album-shelves-all-grid")
-        rule.onNodeWithContentDescription("返回相册首页").performClick();waitTag("album-shelf-all")
+        rule.onNodeWithContentDescription("相册排序").performClick()
+        rule.onNodeWithText("按名称").performClick();waitTag("album-mock-album")
+        rule.waitUntil(10000) {rule.onAllNodesWithTag("glass-action-menu").fetchSemanticsNodes().isEmpty()}
+        val favorite=rule.onNodeWithTag("album-utility-收藏").fetchSemanticsNode().boundsInRoot
+        val tags=rule.onNodeWithTag("album-utility-标签").fetchSemanticsNode().boundsInRoot
+        val locked=rule.onNodeWithTag("album-utility-私密空间").fetchSemanticsNode().boundsInRoot
+        val trash=rule.onNodeWithTag("album-utility-回收站").fetchSemanticsNode().boundsInRoot
+        assertEquals(favorite.top,tags.top,.5f);assertEquals(locked.top,trash.top,.5f)
+        assertEquals(favorite.left,locked.left,.5f);assertEquals(tags.left,trash.left,.5f)
+        rule.onNodeWithTag("album-utility-收藏").performClick();waitTag("favorite-photos")
+        rule.onNodeWithText("6 项 · 不含归档与私密内容").assertExists()
+        rule.onAllNodesWithContentDescription("返回").onLast().performClick();waitTag("album-utilities")
+        rule.onNodeWithTag("album-utility-标签").performClick();waitTag("tag-list")
+        rule.onAllNodesWithContentDescription("返回").onLast().performClick();waitTag("album-utilities")
+        rule.onNodeWithTag("album-utility-私密空间").performClick()
+        waitTag("private-password")
+        rule.onAllNodesWithContentDescription("返回").onLast().performClick();waitTag("album-utilities")
+        rule.onNodeWithTag("album-utility-回收站").performClick()
+        waitTag("trash-list")
+        rule.onAllNodesWithContentDescription("返回").onLast().performClick();waitTag("album-utilities")
         rule.onNodeWithContentDescription("新建相册").performClick()
         rule.onNodeWithText("名称").assertExists()
         rule.onAllNodesWithContentDescription("返回").onLast().performClick()

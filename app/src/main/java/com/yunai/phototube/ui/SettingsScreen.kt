@@ -125,7 +125,7 @@ internal fun SettingsScreen(
                 if(onLibraryTool!=null) item {
                     SectionLabel("资料库管理")
                     SettingsGroup {
-                        com.yunai.phototube.ui.remote.LibraryTool.entries.forEachIndexed {index,tool ->
+                        com.yunai.phototube.ui.remote.LibraryTool.entries.filter {it != com.yunai.phototube.ui.remote.LibraryTool.FAVORITES}.forEachIndexed {index,tool ->
                             if(index>0) InsetDivider()
                             Row(Modifier.fillMaxWidth().clickable {onLibraryTool(tool)}.padding(16.dp),
                                 verticalAlignment=Alignment.CenterVertically) {

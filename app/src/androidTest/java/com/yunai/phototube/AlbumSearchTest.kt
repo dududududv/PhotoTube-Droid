@@ -52,7 +52,7 @@ class AlbumSearchTest {
     private fun waitText(text:String) {rule.waitUntil(15000) {rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}}
     @Test fun cancellingSearchRestoresBrowsingPosition() {
         searchActive.value=false;query.value="";open();waitText("其他相册 0")
-        rule.onNodeWithTag("album-shelf-all").performScrollToIndex(16)
+        rule.onNodeWithTag("remote-albums").performScrollToIndex(18)
         val before=rule.onNodeWithTag("album-album-16").fetchSemanticsNode().boundsInRoot
         rule.runOnIdle {searchActive.value=true;query.value="sea"}
         waitText("SEA 回忆")

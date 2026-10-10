@@ -22,7 +22,11 @@ import androidx.compose.foundation.shape.*
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.ui.res.painterResource
+import com.yunai.phototube.R
 import com.yunai.phototube.ui.icons.LibraryFolder
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -55,7 +59,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import com.yunai.phototube.ui.state.rememberConfigurationState
 
 @Composable
-internal fun RemoteAlbums(server:PhotoTubeServer?,ready:Boolean,topInset:Dp,modifier:Modifier=Modifier,query:String="",searchActive:Boolean=false,onLibraryChanged:()->Unit={},revision:Int=0,createRequested:Boolean=false,onCreateConsumed:()->Unit={},onConnect:()->Unit) {
+internal fun RemoteAlbums(server:PhotoTubeServer?,ready:Boolean,topInset:Dp,modifier:Modifier=Modifier,query:String="",searchActive:Boolean=false,onLibraryChanged:()->Unit={},revision:Int=0,createRequested:Boolean=false,onCreateConsumed:()->Unit={},onLibraryTool:(LibraryTool)->Unit={},onConnect:()->Unit) {
     if(server==null || !ready) {
         Column(modifier.fillMaxSize().padding(horizontal=24.dp).padding(top=topInset+64.dp)) {
             Text("相册",fontSize=30.sp,color=AppTheme.colors.text)
@@ -82,10 +86,13 @@ internal fun RemoteAlbums(server:PhotoTubeServer?,ready:Boolean,topInset:Dp,modi
             }
         }.flow
     }
-    var allAlbumsOpen by rememberSaveable(server) {mutableStateOf(false)}
-    val browsingFlow=remember(repository) {
+    var albumOrder by rememberSaveable {mutableStateOf(AlbumOrder.DEFAULT)}
+    val browsingFlow=remember(repository,albumOrder) {
         Pager(PagingConfig(100,initialLoadSize=100,prefetchDistance=12,enablePlaceholders=false)) {
-            AlbumPagingSource {cursor -> repository.list(cursor)}
+            AlbumPagingSource {cursor ->
+                if(albumOrder==AlbumOrder.DEFAULT) repository.list(cursor)
+                else AlbumPage(loadOrderedAlbums(albumOrder,repository::list),null)
+            }
         }.flow
     }
     val browsingAlbums=browsingFlow.collectAsLazyPagingItems()
@@ -93,7 +100,6 @@ internal fun RemoteAlbums(server:PhotoTubeServer?,ready:Boolean,topInset:Dp,modi
     val albums=if(searchActive) flow.collectAsLazyPagingItems() else browsingAlbums
     LaunchedEffect(revision) {if(revision>0) {browsingAlbums.refresh();if(searchActive) albums.refresh()}}
     val browsingState=rememberLazyGridState()
-    val shelvesState=rememberLazyListState()
     val searchState=rememberLazyGridState()
     val gridState=if(searchActive) searchState else browsingState
     LaunchedEffect(appliedQuery,searchActive) {if(searchActive) searchState.scrollToItem(0)}
@@ -104,8 +110,6 @@ internal fun RemoteAlbums(server:PhotoTubeServer?,ready:Boolean,topInset:Dp,modi
     var selectedBounds by remember {mutableStateOf<Rect?>(null)}
     val coverPainters=remember {mutableMapOf<Pair<String,String?>,Painter>()}
     var selectedCoverPainter by remember {mutableStateOf<Painter?>(null)}
-    val shelfState=rememberLazyListState()
-    BackHandler(allAlbumsOpen && !searchActive && selected==null && !creating) {allAlbumsOpen=false}
     val openAlbum:(RemoteAlbum)->Unit={album ->
         selectedBounds=coverBounds[album.id]
         selectedCoverPainter=coverPainters[album.id to album.cover?.id]
@@ -114,50 +118,49 @@ internal fun RemoteAlbums(server:PhotoTubeServer?,ready:Boolean,topInset:Dp,modi
     val tile:@Composable (RemoteAlbum,Modifier)->Unit={album,tileModifier ->
         AlbumShelfCover(album,server,tileModifier,coverBounds,coverPainters) {openAlbum(album)}
     }
-    val header:@Composable ()->Unit={
-        Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(end=112.dp),verticalAlignment=Alignment.CenterVertically) {
-            if(allAlbumsOpen && !searchActive) IconButton(onClick={allAlbumsOpen=false}) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack,"返回相册首页",tint=AppTheme.colors.text)
+    val scene=rememberLayerBackdrop()
+    var sortOpen by remember {mutableStateOf(false)}
+    LaunchedEffect(albumOrder) {browsingState.scrollToItem(0)}
+    LazyVerticalGrid(GridCells.Fixed(2),modifier.fillMaxSize().layerBackdrop(scene).testTag("remote-albums"),state=gridState,
+        contentPadding=PaddingValues(start=20.dp,end=20.dp,top=topInset,bottom=140.dp),
+        horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
+        item(key="header",span={GridItemSpan(maxLineSpan)}) {
+            Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(end=112.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("相册",fontSize=30.sp,fontWeight=FontWeight.Bold,color=AppTheme.colors.text,maxLines=1)
             }
-            Text("相册",fontSize=30.sp,fontWeight=FontWeight.Bold,color=AppTheme.colors.text,maxLines=1)
         }
-    }
-    if(searchActive || allAlbumsOpen) {
-        LazyVerticalGrid(GridCells.Fixed(2),modifier.fillMaxSize().testTag("remote-albums"),state=gridState,
-            contentPadding=PaddingValues(start=18.dp,end=18.dp,top=topInset,bottom=140.dp),
-            horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            item(span={GridItemSpan(maxLineSpan)}) {header()}
-            if(searching) item(span={GridItemSpan(maxLineSpan)}) {Text("正在匹配相册名称…",color=AppTheme.colors.secondary)}
-            items(if(searching) 0 else albums.itemCount,key=albums.itemKey {it.id}) {index ->
-                albums[index]?.let {tile(it,Modifier.fillMaxWidth())}
-            }
-            item(span={GridItemSpan(maxLineSpan)}) {AlbumPageStatus(albums,searching,searchActive && appliedQuery.isNotEmpty())}
-        }
-    } else {
-        BoxWithConstraints(modifier.fillMaxSize()) {
-            // Two complete square covers and the edge of the next establish horizontal browsing.
-            val coverSize=((maxWidth-52.dp)/2.12f).coerceIn(136.dp,210.dp)
-            LazyColumn(Modifier.fillMaxSize().testTag("remote-albums"),state=shelvesState,
-                contentPadding=PaddingValues(top=topInset,bottom=140.dp),verticalArrangement=Arrangement.spacedBy(20.dp)) {
-                item(key="header") {Box(Modifier.padding(horizontal=18.dp)) {header()}}
-                item(key="albums") {
-                    Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                        Row(Modifier.padding(start=18.dp).clip(RoundedCornerShape(12.dp))
-                            .clickable {allAlbumsOpen=true}.heightIn(min=36.dp).testTag("album-section-all"),
-                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                            Text("我的相册",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=AppTheme.colors.text)
-                            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight,null,Modifier.size(22.dp),tint=AppTheme.colors.secondary)
-                        }
-                        LazyRow(Modifier.fillMaxWidth().testTag("album-shelf-all"),state=shelfState,
-                            contentPadding=PaddingValues(horizontal=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            items(albums.itemCount,key=albums.itemKey {it.id}) {index ->
-                                albums[index]?.let {tile(it,Modifier.width(coverSize))}
-                            }
-                        }
+        if(!searchActive) item(key="album-heading",span={GridItemSpan(maxLineSpan)}) {
+            Row(Modifier.fillMaxWidth().padding(top=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("我的相册",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=AppTheme.colors.text,modifier=Modifier.weight(1f))
+                if(albums.loadState.refresh is LoadState.NotLoading) Text(
+                    "${albums.itemCount}${if(albums.loadState.append.endOfPaginationReached) "" else "+"} 个",
+                    fontSize=13.sp,color=AppTheme.colors.secondary)
+                Spacer(Modifier.width(10.dp))
+                Box {
+                    IconButton(onClick={sortOpen=true},modifier=Modifier.size(44.dp).clip(CircleShape).background(AppTheme.colors.subtle)) {
+                        Icon(painterResource(R.drawable.ic_album_arrow_down_wide_narrow),"相册排序",Modifier.size(21.dp),tint=AppTheme.colors.text)
                     }
+                    GlassActionMenu(sortOpen,{sortOpen=false},scene,AlbumOrder.entries.map {order ->
+                        GlassMenuAction(order.label,icon=if(albumOrder==order) Icons.Rounded.Check else null) {albumOrder=order}
+                    })
                 }
-                item(key="status") {
-                    AlbumPageStatus(albums,false,false)
+            }
+        }
+        if(searching) item(span={GridItemSpan(maxLineSpan)}) {Text("正在匹配相册名称…",color=AppTheme.colors.secondary)}
+        items(if(searching) 0 else albums.itemCount,key=albums.itemKey {it.id}) {index ->
+            albums[index]?.let {tile(it,Modifier.fillMaxWidth())}
+        }
+        item(key="status",span={GridItemSpan(maxLineSpan)}) {AlbumPageStatus(albums,searching,searchActive && appliedQuery.isNotEmpty())}
+        if(!searchActive) item(key="utilities",span={GridItemSpan(maxLineSpan)}) {
+            Column(Modifier.fillMaxWidth().testTag("album-utilities"),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                Text("更多项目",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=AppTheme.colors.text,modifier=Modifier.padding(bottom=8.dp))
+                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    AlbumUtility("收藏",R.drawable.ic_album_heart,Modifier.weight(1f)) {onLibraryTool(LibraryTool.FAVORITES)}
+                    AlbumUtility("标签",R.drawable.ic_album_tag,Modifier.weight(1f)) {onLibraryTool(LibraryTool.TAGS)}
+                }
+                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    AlbumUtility("私密空间",R.drawable.ic_album_lock_keyhole,Modifier.weight(1f)) {onLibraryTool(LibraryTool.PRIVATE)}
+                    AlbumUtility("回收站",R.drawable.ic_album_trash_2,Modifier.weight(1f)) {onLibraryTool(LibraryTool.TRASH)}
                 }
             }
         }
@@ -171,20 +174,33 @@ private fun AlbumShelfCover(album:RemoteAlbum,server:PhotoTubeServer,modifier:Mo
     bounds:MutableMap<String,Rect>,painters:MutableMap<Pair<String,String?>,Painter>,onClick:()->Unit) {
     val coverKey=album.id to album.cover?.id
     DisposableEffect(coverKey) {onDispose {painters.remove(coverKey)}}
-    Box(modifier.aspectRatio(1f).testTag("album-${album.id}").mediaBounds(album.id,bounds)
-        .clip(RoundedCornerShape(16.dp)).background(AppTheme.colors.subtle)
-        .clickable(onClick=onClick).semantics {contentDescription="${album.name}，${album.count} 项"}) {
-        Box(Modifier.fillMaxSize().testTag("remote-album-cover-${album.id}")) {
-            val url=album.cover?.let(server::thumbnail)
-            if(url!=null) AsyncImage(url,null,imageLoader=server.imageLoader,contentScale=ContentScale.Crop,
-                alignment=BiasAlignment(album.focusX*2-1,album.focusY*2-1),modifier=Modifier.fillMaxSize(),
-                onSuccess={painters[coverKey]=it.painter})
-            else AlbumCoverPlaceholder(album,Modifier.fillMaxSize())
+    Column(modifier.testTag("album-${album.id}").clickable(role=Role.Button,onClick=onClick)
+        .semantics(mergeDescendants=true) {contentDescription="${album.name}，${album.count} 项"}) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).mediaBounds(album.id,bounds)
+            .clip(RoundedCornerShape(16.dp)).background(AppTheme.colors.subtle)) {
+            Box(Modifier.fillMaxSize().testTag("remote-album-cover-${album.id}")) {
+                val url=album.cover?.let(server::thumbnail)
+                if(url!=null) AsyncImage(url,null,imageLoader=server.imageLoader,contentScale=ContentScale.Crop,
+                    alignment=BiasAlignment(album.focusX*2-1,album.focusY*2-1),modifier=Modifier.fillMaxSize(),
+                    onSuccess={painters[coverKey]=it.painter})
+                else AlbumCoverPlaceholder(album,Modifier.fillMaxSize())
+            }
         }
-        Box(Modifier.fillMaxWidth().fillMaxHeight(.45f).align(Alignment.BottomCenter)
-            .background(Brush.verticalGradient(listOf(Color.Transparent,Color.Black.copy(alpha=.56f)))))
-        Text(album.name,color=Color.White,fontSize=15.sp,lineHeight=20.sp,fontWeight=FontWeight.Medium,
-            modifier=Modifier.align(Alignment.BottomStart).padding(12.dp),maxLines=2,overflow=TextOverflow.Ellipsis)
+        Text(album.name,color=AppTheme.colors.text,fontSize=16.sp,lineHeight=22.sp,fontWeight=FontWeight.SemiBold,
+            modifier=Modifier.padding(top=8.dp),maxLines=1,overflow=TextOverflow.Ellipsis)
+        // The contract provides a combined assetCount, not separate photo/video totals.
+        Text("${album.count} 项",color=AppTheme.colors.secondary,fontSize=13.sp,lineHeight=19.sp)
+    }
+}
+
+@Composable
+private fun AlbumUtility(label:String,icon:Int,modifier:Modifier=Modifier,onClick:()->Unit) {
+    Row(modifier.clip(RoundedCornerShape(12.dp)).background(AppTheme.colors.subtle)
+        .clickable(role=Role.Button,onClick=onClick).heightIn(min=50.dp).padding(horizontal=14.dp,vertical=12.dp)
+        .testTag("album-utility-$label"),verticalAlignment=Alignment.CenterVertically,
+        horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+        Icon(painterResource(icon),null,Modifier.size(22.dp),tint=AppTheme.colors.secondary)
+        Text(label,color=AppTheme.colors.text,fontSize=15.sp,fontWeight=FontWeight.Medium)
     }
 }
 

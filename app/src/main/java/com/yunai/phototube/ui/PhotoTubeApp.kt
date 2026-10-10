@@ -186,7 +186,7 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
             }
             else RemoteAlbums(wall.server,wall.stage==com.yunai.phototube.data.ConnectionStage.READY,cornerInsets.top,
                 Modifier.nestedScroll(scrollConnection).background(AppTheme.colors.background),
-                query=albumQuery,searchActive=panel=="search",revision=albumRevision,createRequested=createAlbum,onCreateConsumed={createAlbum=false},onLibraryChanged=wall::refresh,onConnect={tab=0;wall.configure()})
+                query=albumQuery,searchActive=panel=="search",revision=albumRevision,onLibraryTool={libraryTool=it},createRequested=createAlbum,onCreateConsumed={createAlbum=false},onLibraryChanged=wall::refresh,onConnect={tab=0;wall.configure()})
             }
             if(undoPhoto != null && panel?.startsWith("album:") != true) UndoDeletion({undoPhoto?.let {removedIds=removedIds-it.id};undoPhoto=null},backdrop,
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start=16.dp,end=16.dp,bottom=100.dp))
@@ -260,7 +260,7 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
             MediaViewer(request,favoriteIds.toSet(),onFavorite={id -> favoriteIds=if(id in favoriteIds) favoriteIds-id else favoriteIds+id},
                 onDelete={photo -> removedIds=removedIds+photo.id;undoPhoto=photo},onClose={viewer=null})
         }
-        BackHandler(panel == null && viewer == null && remoteViewer == null && (tab != 0 || query.isNotEmpty() || favoritesOnly)) { tab = 0; query = ""; favoritesOnly = false }
+        BackHandler(panel == null && libraryTool == null && viewer == null && remoteViewer == null && (tab != 0 || query.isNotEmpty() || favoritesOnly)) { tab = 0; query = ""; favoritesOnly = false }
     }
 }
 

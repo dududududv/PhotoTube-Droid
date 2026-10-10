@@ -38,7 +38,8 @@ internal class LocalMockData(private val context: Context) {
             val resource=if(video) R.raw.glass_video else pictures[index%pictures.size]
             return response(context.resources.openRawResource(resource).use {it.readBytes()},if(video) "video/mp4" else "image/jpeg")
         }
-        val assets=JSONArray((0 until 24).filter {names[it%6].contains(request.url.queryParameter("keyword").orEmpty())}.map(::asset))
+        val assets=JSONArray((0 until 24).filter {names[it%6].contains(request.url.queryParameter("keyword").orEmpty()) &&
+            (request.url.queryParameter("favorite")?.toBooleanStrictOrNull()?.let {favorite -> (it%4==0)==favorite} ?: true)}.map(::asset))
         return when {
             path=="health" -> json("""{"status":"ok","database":{"reachable":true,"migrationVersion":0},"xmpExport":{"available":false}}""")
             path=="auth/session" -> json("""{"authenticated":true,"passwordSet":true,"user":{"id":"mock-user","username":"本地 Mock"},"privateAccessUnlocked":false,"privateAccessExpiresAt":null,"originalDeleteEnabled":false}""")
