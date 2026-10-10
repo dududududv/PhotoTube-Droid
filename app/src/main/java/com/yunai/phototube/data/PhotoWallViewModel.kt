@@ -26,10 +26,10 @@ internal fun monthKey(asset:RemoteAsset,groups:List<MonthGroup>):String {
 internal class PhotoWallViewModel @JvmOverloads constructor(
     application:Application,
     private val serverFactory:(String,()->Unit)->PhotoTubeServer={url,expired -> PhotoTubeServer(application,url,expired)},
-    preferenceName:String="server_connection"
+    preferenceName:String="server_connection_v2"
 ):AndroidViewModel(application) {
     private val prefs=application.getSharedPreferences(preferenceName,0)
-    var address by androidx.compose.runtime.mutableStateOf(LocalConnection.BASE)
+    var address by androidx.compose.runtime.mutableStateOf(prefs.getString("base_url", "").orEmpty())
         private set
     var stage by androidx.compose.runtime.mutableStateOf(ConnectionStage.ADDRESS)
         private set
@@ -79,9 +79,13 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
         searchOrigin=null
     }
     private fun cancelCurrentPaging() {pagingScope?.takeUnless {it===searchOrigin?.scope}?.cancel()}
-    init {if(preferenceName=="server_connection") {prefs.edit().clear().apply();connect(LocalConnection.BASE)}}
+    init {if(preferenceName=="server_connection_v2" && address.isNotBlank()) connect(address)}
     fun signedOut() {discardSearchOrigin();operation?.cancel();pagingScope?.cancel();pageFlow=null;groups=emptyList();filters=WallFilters();busy=false;error=null;stage=ConnectionStage.LOGIN;server?.imageLoader?.memoryCache?.clear()}
-    fun configure() {discardSearchOrigin();operation?.cancel();pagingScope?.cancel();busy=false;stage=ConnectionStage.ADDRESS;error=null;pageFlow=null;server?.imageLoader?.memoryCache?.clear()}
+    fun configure() {
+        discardSearchOrigin();operation?.cancel();pagingScope?.cancel()
+        server?.dispose();server=null;pageFlow=null;groups=emptyList();filters=WallFilters()
+        busy=false;stage=ConnectionStage.ADDRESS;error=null
+    }
     private fun expired(instance:PhotoTubeServer) {viewModelScope.launch {
         if(server===instance) {discardSearchOrigin();pagingScope?.cancel();pageFlow=null;groups=emptyList();instance.imageLoader.memoryCache?.clear();stage=ConnectionStage.LOGIN;error=ServerError("UNAUTHORIZED","登录已过期，请重新登录")}
     }}
@@ -93,12 +97,14 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
             var candidate:PhotoTubeServer?=null
             try {
                 val normalized=PhotoTubeServer.normalize(value)
+                address=normalized
+                if(server?.base!=normalized) {filters=WallFilters();groups=emptyList();pageFlow=null;pagingScope?.cancel()}
                 candidate=withContext(Dispatchers.IO) {lateinit var result:PhotoTubeServer;result=serverFactory(normalized){expired(result)};result}
                 candidate.health()
-                val old=server
-                if(old!=null) {if(old.base!=normalized) old.cookies.clear();old.dispose()}
-                server=candidate;address=normalized;prefs.edit().putString("base_url",normalized).apply()
                 val session=candidate.session()
+                val old=server
+                old?.dispose()
+                server=candidate;address=normalized;prefs.edit().putString("base_url",normalized).apply()
                 when {
                     session.getBoolean("authenticated") -> loadWall(candidate)
                     session.getBoolean("passwordSet") -> {candidate.cookies.clear();stage=ConnectionStage.LOGIN}

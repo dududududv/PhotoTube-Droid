@@ -221,7 +221,7 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
             SettingsScreen(
                 haptics, { haptics = it }, wall.filters.favorite==true, { wall.updateFilters(wall.filters.copy(favorite=if(it) true else null)) }, true, {},
                 glassStrength, theme::updateOpacity,
-                onServer = { panel=null;tab=0;wall.connect(com.yunai.phototube.data.LocalConnection.BASE) },
+                onServer = { panel=null;tab=0;wall.configure() },
                 onLibraryTool = if(wall.server!=null) {{libraryTool=it}} else null,
                 onRemoteSettings = if(wall.stage==com.yunai.phototube.data.ConnectionStage.READY) {{panel="server-settings"}} else null,
                 onAppearance = theme::updateGlass, onVideo = { showVideo = true }, onClose = { panel = null }

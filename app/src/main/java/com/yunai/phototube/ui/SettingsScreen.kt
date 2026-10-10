@@ -77,7 +77,7 @@ internal fun SettingsScreen(
                     SectionLabel("服务器")
                     SettingsGroup {
                         Row(Modifier.fillMaxWidth().clickable(onClick=onServer).padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Text("重新连接服务器",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
+                            Text("切换服务器",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
                             Icon(Icons.Outlined.KeyboardArrowRight,null,tint=AppTheme.colors.secondary)
                         }
                         if(onRemoteSettings!=null) {

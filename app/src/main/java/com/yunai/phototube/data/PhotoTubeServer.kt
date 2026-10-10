@@ -47,29 +47,23 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
         }
         fun normalize(address:String):String {
             val url=address.trim().toHttpUrl()
-            require(url.username.isEmpty() && url.password.isEmpty() && url.query==null && url.fragment==null && url.encodedPath=="/") {"请填写服务根地址，不要包含 /api/v1、账号或查询参数"}
-            require(url.host in setOf("localhost","127.0.0.1","::1")) {"仅允许本地联调或隔离测试地址"}
-            return url.toString().trimEnd('/')
+            require(url.username.isEmpty() && url.password.isEmpty() && url.query==null && url.fragment==null) {"服务器地址不能包含账号、密码或查询参数"}
+            require(url.encodedPath in setOf("/", "/api/v1", "/api/v1/")) {"请填写服务根地址，例如 https://photos.example.com"}
+            return url.newBuilder().encodedPath("/").build().toString().trimEnd('/')
         }
     }
     val base=normalize(address)
     val origin="$base/".toHttpUrl()
     val privateMedia get()=privateAllowed!=null
-    init { require(LocalConnection.allowsTransport(origin, transport!=null)) {"禁止访问未授权服务"} }
     val cookies=sessionCookies ?: SessionCookieJar(context,origin)
     val client=(transport?.newBuilder() ?: OkHttpClient.Builder()).cookieJar(cookies).proxy(java.net.Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
         .eventListenerFactory(MediaLoadDiagnostics.networkEvents)
         .addInterceptor { chain ->
             val request=chain.request()
             check(request.url.scheme==origin.scheme && request.url.host==origin.host && request.url.port==origin.port) { "禁止跨来源请求" }
-            check(LocalConnection.allowsTransport(origin, transport!=null)) { "禁止访问未授权服务" }
             chain.proceed(request)
         }
         .addInterceptor(MediaLoadDiagnostics.responses)
-        .dns { host ->
-            check(host in setOf("localhost","127.0.0.1","::1")) { "禁止解析外部地址" }
-            listOf(java.net.InetAddress.getLoopbackAddress())
-        }
         .connectTimeout(10,TimeUnit.SECONDS).readTimeout(25,TimeUnit.SECONDS).callTimeout(40,TimeUnit.SECONDS).retryOnConnectionFailure(false)
         .addInterceptor { chain ->
             if(privateAllowed?.invoke()==false) throw IOException("私密空间已锁定")
@@ -119,11 +113,10 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
     @OptIn(coil3.annotation.ExperimentalCoilApi::class)
     private fun createImageLoader()=ImageLoader.Builder(context).components {
         add(coil3.gif.AnimatedImageDecoder.Factory())
-        add(OkHttpNetworkFetcherFactory(callFactory={client},connectivityChecker={ context ->
-            // adb reverse reaches this exact local service even when Android has no default network.
-            // Keep the same authenticated client and its origin/redirect guards.
-            if(LocalConnection.isLocalDevelopment(origin)) coil3.network.ConnectivityChecker.ONLINE
-            else coil3.network.ConnectivityChecker(context)
+        add(OkHttpNetworkFetcherFactory(callFactory={client},connectivityChecker={ _ ->
+            // LAN and loopback services can be reachable without Android reporting Internet access.
+            // Let the authenticated, origin-scoped HTTP request determine reachability.
+            coil3.network.ConnectivityChecker.ONLINE
         }))
     }.eventListenerFactory(MediaLoadDiagnostics.imageEvents).diskCache(null)
         .apply {if(privateMedia) memoryCache(null)}.build()

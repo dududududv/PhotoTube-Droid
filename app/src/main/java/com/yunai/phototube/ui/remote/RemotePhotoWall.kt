@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -127,12 +128,23 @@ internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier
 @Composable
 private fun ConnectionForm(vm:PhotoWallViewModel) {
     val colors=AppTheme.colors
-    var username by remember {mutableStateOf("admin")}
-    var password by remember {mutableStateOf("")}
-    Text("连接本地图库",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=colors.text)
-    Text(vm.address,color=colors.secondary)
+    var address by rememberSaveable(vm.address) {mutableStateOf(vm.address)}
+    var username by rememberSaveable(vm.address) {mutableStateOf("admin")}
+    var password by remember(vm.address, vm.stage) {mutableStateOf("")}
+    Text("连接图库",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=colors.text)
     when(vm.stage) {
+        ConnectionStage.ADDRESS, ConnectionStage.CONNECTING -> {
+            com.yunai.phototube.ui.GlassTextField(address,{address=it},"服务器地址",enabled=!vm.busy,
+                keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType=androidx.compose.ui.text.input.KeyboardType.Uri,autoCorrectEnabled=false),
+                modifier=Modifier.fillMaxWidth().testTag("server-address"))
+            Text("输入服务器完整地址，例如 https://photos.example.com",color=colors.secondary)
+            com.yunai.phototube.ui.GlassSettingsAction(if(vm.busy) "正在连接…" else "连接服务器",
+                {vm.connect(address.trim())},enabled=!vm.busy && address.isNotBlank(),
+                modifier=Modifier.testTag("server-connect"))
+        }
         ConnectionStage.LOGIN -> {
+            Text(vm.address,color=colors.secondary)
             com.yunai.phototube.ui.GlassTextField(username,{username=it},"账号",enabled=!vm.busy,
                 modifier=Modifier.fillMaxWidth().testTag("local-login-username"))
             com.yunai.phototube.ui.GlassTextField(password,{password=it},"密码",enabled=!vm.busy,
@@ -144,12 +156,16 @@ private fun ConnectionForm(vm:PhotoWallViewModel) {
                 vm.login(username.trim(),password);password=""
             },enabled=!vm.busy && username.isNotBlank() && password.isNotEmpty(),
                 modifier=Modifier.testTag("local-login-submit"))
+            com.yunai.phototube.ui.GlassSettingsAction("更换服务器",vm::configure,enabled=!vm.busy)
         }
-        ConnectionStage.INITIALIZE -> Text("请先在本地服务中初始化账号，再重新连接。",color=colors.secondary)
+        ConnectionStage.INITIALIZE -> {
+            Text(vm.address,color=colors.secondary)
+            Text("请先在服务端初始化账号，再重新连接。",color=colors.secondary)
+            com.yunai.phototube.ui.GlassSettingsAction("重新连接",{vm.connect(vm.address)},enabled=!vm.busy)
+            com.yunai.phototube.ui.GlassSettingsAction("更换服务器",vm::configure,enabled=!vm.busy)
+        }
         else -> Unit
     }
-    if(vm.stage!=ConnectionStage.LOGIN) com.yunai.phototube.ui.GlassSettingsAction(
-        if(vm.busy) "正在连接…" else "重新连接",{vm.connect(LocalConnection.BASE)},enabled=!vm.busy)
     vm.error?.let {Failure(it,null)}
 }
 @Composable

@@ -6,7 +6,6 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import com.yunai.phototube.data.LocalConnection
 import com.yunai.phototube.data.PhotoTubeServer
 import com.yunai.phototube.data.MediaLoadDiagnostics
 import coil3.request.CachePolicy
@@ -30,8 +29,17 @@ class LocalIntegrationSmokeTest {
         val password = requireNotNull(args.getString("localPassword"))
         ActivityScenario.launch(MainActivity::class.java).use {
             rule.waitUntil(20000) {
+                rule.onAllNodesWithTag("server-address").fetchSemanticsNodes().isNotEmpty() ||
                 rule.onAllNodesWithTag("local-login-username").fetchSemanticsNodes().isNotEmpty() ||
                     rule.onAllNodesWithTag("remote-photo-wall").fetchSemanticsNodes().isNotEmpty()
+            }
+            if(rule.onAllNodesWithTag("server-address").fetchSemanticsNodes().isNotEmpty()) {
+                rule.onNodeWithTag("server-address").performTextReplacement("http://127.0.0.1:18474")
+                rule.onNodeWithTag("server-connect").performClick()
+                rule.waitUntil(20000) {
+                    rule.onAllNodesWithTag("local-login-username").fetchSemanticsNodes().isNotEmpty() ||
+                        rule.onAllNodesWithTag("remote-photo-wall").fetchSemanticsNodes().isNotEmpty()
+                }
             }
             if(rule.onAllNodesWithTag("local-login-username").fetchSemanticsNodes().isNotEmpty()) {
                 rule.onNodeWithTag("local-login-username").performTextReplacement(username)
@@ -51,7 +59,7 @@ class LocalIntegrationSmokeTest {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("localIntegrationSmoke") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val server = PhotoTubeServer(context, LocalConnection.BASE, {})
+        val server = PhotoTubeServer(context, "http://127.0.0.1:18474", {})
         try {
             server.login(requireNotNull(args.getString("localUsername")), requireNotNull(args.getString("localPassword")))
             assertSame(server.cookies, server.client.cookieJar)
