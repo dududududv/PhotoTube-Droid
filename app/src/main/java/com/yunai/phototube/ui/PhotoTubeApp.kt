@@ -164,7 +164,8 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
         fun openMedia(photo: Photo) { focusManager.clearFocus();viewer = ViewerRequest(visible,photo.id,mediaBounds.toMap(),resolveSource={mediaBounds[it]}) }
         val visibleAlbums = albums.filter { albumQuery.isBlank() || it.title.contains(albumQuery) }
         CompositionLocalProvider(LocalMediaBounds provides mediaBounds) {
-        Box(Modifier.fillMaxSize().background(AppTheme.colors.background)) {
+        Box(Modifier.fillMaxSize().background(AppTheme.colors.background)
+            .then(if(panel=="filter") Modifier.clearAndSetSemantics {} else Modifier)) {
             // Photos extend behind the floating controls; only the controls apply glass.
             androidx.compose.animation.Crossfade(targetState=tab,
                 modifier=Modifier.fillMaxSize().layerBackdrop(backdrop),
@@ -190,6 +191,12 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
             }
             if(undoPhoto != null && panel?.startsWith("album:") != true) UndoDeletion({undoPhoto?.let {removedIds=removedIds-it.id};undoPhoto=null},backdrop,
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start=16.dp,end=16.dp,bottom=100.dp))
+            // A feathered scroll edge keeps theme-colored system text legible over media.
+            val statusHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+            Box(Modifier.fillMaxWidth().height(statusHeight + 16.dp).background(Brush.verticalGradient(
+                0f to AppTheme.colors.background,
+                .72f to AppTheme.colors.background.copy(alpha=.96f),
+                1f to AppTheme.colors.background.copy(alpha=0f))))
             // Keep glass outside its source layer so it never samples itself.
             Toolbar(
                 backdrop = backdrop, surfaceColor = AppTheme.colors.glass.copy(alpha = glassStrength),
@@ -217,6 +224,7 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
             }
         }
         }
+        Box(Modifier.fillMaxSize().then(if(panel=="filter") Modifier.clearAndSetSemantics {} else Modifier)) {
         SearchDock(panel=="search",tab==0,if(tab==0) query else albumQuery,
             onValue={if(tab==0) query=it else albumQuery=it},onOpen=::beginSearch,onClose=::endSearch,
             backdrop=backdrop,insets=cornerInsets,collapsedSize=barHeight,iconSize=bottomIconSize,opacity=glassStrength,
@@ -228,10 +236,10 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
                 query.isBlank() -> "按文件名搜索 · 至少 3 个字符"
                 else -> "找到 ${wall.groups.sumOf {it.count}} 项内容"
             } else "按相册名称筛选")
+        }
         if (panel == "filter") FilterMenu(backdrop,cornerInsets,glassStrength,wall.filters,
-            onChange=wall::updateFilters,onDismiss={panel=null},onAdvanced=if(wall.server!=null) {{panel="advanced-filter"}} else null)
+            onChange=wall::updateFilters,onDismiss={panel=null},server=wall.server)
         if(panel=="bulk-assets") wall.server?.let {api -> com.yunai.phototube.ui.remote.BulkAssetsScreen(api,wall.filters,wall.groups.sumOf {it.count},onChanged=wall::refresh,onClose={panel=null},groups=wall.groups,sourceFlow=wall.pageFlow,initialRowKey=bulkRowKey,initialRowOffset=bulkRowOffset,initialSelectedId=bulkSelectedId)}
-        if(panel=="advanced-filter") wall.server?.let {api -> com.yunai.phototube.ui.remote.WallFilterEditor(api,wall.filters,onApply={wall.updateFilters(it);panel=null},onClose={panel="filter"})}
         if (panel?.startsWith("album:") == true) {
             val album = albums.first { it.key == panel!!.substringAfter(":") }
             AlbumDetail(album.title,albumMedia(album.key).filter {it.id !in removedIds},favoriteIds.toSet(),

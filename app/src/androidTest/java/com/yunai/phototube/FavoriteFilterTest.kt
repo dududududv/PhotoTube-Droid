@@ -22,7 +22,7 @@ class FavoriteFilterTest {
                 androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.then(androidx.compose.ui.Modifier.size(340.dp,320.dp))) {
                     var filters by remember {mutableStateOf(latest)}
                     FilterMenu(rememberLayerBackdrop(),CornerInsets(16.dp,16.dp,16.dp,16.dp),.4f,filters,
-                        onChange={filters=it;latest=it},onDismiss={},onAdvanced={})
+                        onChange={filters=it;latest=it},onDismiss={})
                 }
             }
         }}
