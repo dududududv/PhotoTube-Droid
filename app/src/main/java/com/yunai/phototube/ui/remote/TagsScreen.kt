@@ -197,7 +197,7 @@ internal fun PhotoTagEditor(source: RemoteMedia, onChanged: () -> Unit, onClose:
         if (current.isEmpty()) Text("这张照片还没有标签", color = AppTheme.colors.secondary)
         current.forEach { tag -> key(tag.id) {
             ManagementGroup(tag.name) {
-                Text(when (tag.source) { "MANUAL" -> "人工标签"; "AI" -> "AI 标签"; "RULE" -> "规则标签"; else -> tag.source }, color = AppTheme.colors.secondary)
+                Text(when (tag.source) { "MANUAL" -> "人工标签"; "AI" -> "AI 标签"; "RULE" -> "规则标签"; else -> tag.source.ifBlank { "来源未知" } }, color = AppTheme.colors.secondary)
                 GlassSettingsAction("移除标签",{mutate {repository.detach(source.asset.id,tag.id)}},enabled=!busy && !refreshNeeded,modifier=Modifier.testTag("remove-photo-tag-${tag.id}"))
             }
         } }

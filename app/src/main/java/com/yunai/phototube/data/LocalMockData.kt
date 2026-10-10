@@ -20,7 +20,7 @@ internal class LocalMockData(private val context: Context) {
         .put("contentHash","a".repeat(64)).put("width",if(index%3==1) 800 else 1200).put("height",800)
         .put("favorite",index%4==0).put("archived",index>=24).put("private",false)
         .put("durationSec",if(index==5) 10 else JSONObject.NULL).put("relativePath","示例照片/示例-$index.jpg").put("libraryId","mock-library")
-        .put("albumIds",JSONArray().put("mock-album")).put("tags",JSONArray().put(JSONObject().put("id",1).put("name","风景")))
+        .put("albumIds",JSONArray().put("mock-album")).put("tags",JSONArray().put(JSONObject().put("id",1).put("name","风景").put("source","MANUAL").put("confirmed",true)))
     private fun album(id:String="mock-album") = JSONObject().put("id",id).put("name","本地示例相册")
         .put("kind","NORMAL").put("sortMode","TAKEN_AT_DESC")
         .put("assetCount",24).put("cover",asset(0)).put("coverFocalPoint",JSONObject.NULL)

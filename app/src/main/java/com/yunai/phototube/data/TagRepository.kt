@@ -41,5 +41,12 @@ internal class TagRepository(server: PhotoTubeServer) {
 internal data class PhotoTag(val id: Long, val name: String, val source: String)
 internal fun photoTags(detail: JSONObject?): List<PhotoTag> {
     val tags = detail?.optJSONArray("tags") ?: return emptyList()
-    return (0 until tags.length()).map { index -> val tag = tags.getJSONObject(index); PhotoTag(tag.getLong("id"), tag.getString("name"), tag.getString("source")) }
+    return (0 until tags.length()).mapNotNull { index ->
+        val tag = tags.optJSONObject(index) ?: return@mapNotNull null
+        val id = tag.optLong("id", 0L).takeIf { it > 0 } ?: return@mapNotNull null
+        val name = (tag.opt("name") as? String)?.takeIf { it.isNotBlank() }
+            ?: return@mapNotNull null
+        // Missing provenance must not prevent a photo from opening or imply manual tagging.
+        PhotoTag(id, name, (tag.opt("source") as? String).orEmpty())
+    }
 }
