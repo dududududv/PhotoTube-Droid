@@ -1,6 +1,5 @@
 package com.yunai.phototube
 
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,9 +17,8 @@ class DarkErrorReadabilityTest : RemoteAppTest() {
     private fun json(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
     override fun readFixture(request: RecordedRequest): MockResponse? {
         val path = request.requestUrl!!.encodedPath
-        if (path == "/api/v1/folders" || path.endsWith("/edit-versions")) {
+        if (path == "/api/v1/folders") {
             if (failing.get()) return json("""{"code":"UNAVAILABLE","message":"$message"}""").setResponseCode(503)
-            if (path.endsWith("/edit-versions")) return json("""{"items":[],"nextCursor":null}""")
         }
         return when (path) {
             "/api/v1/auth/session" -> json("""{"authenticated":true,"passwordSet":true,"user":{"username":"fixture"},"privateAccessUnlocked":false,"originalDeleteEnabled":false}""")
@@ -75,23 +73,6 @@ class DarkErrorReadabilityTest : RemoteAppTest() {
         rule.onNodeWithText("测试媒体库").performClick()
         rule.onNodeWithText("完成选择").assertIsEnabled().performClick()
         rule.onNodeWithText("已选 1 个媒体库").assertIsDisplayed()
-        assertEquals(0, writes.get())
-    }
-    @Test fun editHistoryErrorIsReadableAndRetryRecovers() {
-        darkSettings()
-        rule.onNodeWithContentDescription("返回相册").performClick()
-        rule.onNodeWithContentDescription("图库标签").performClick()
-        waitTag("asset-restore-0")
-        rule.onNodeWithTag("asset-restore-0").performTouchInput { click(Offset(12f, 12f)) }
-        waitTag("media-viewer")
-        rule.onNodeWithContentDescription("更多操作").performClick()
-        rule.onNodeWithText("编辑历史与原图").performClick()
-        assertRenderedError("edit-history")
-        rule.onNodeWithText("正在显示原图").assertHasNoClickAction()
-        failing.set(false)
-        rule.onNodeWithText("重试历史").performClick()
-        rule.waitUntil(10000) { rule.onAllNodesWithText("暂无编辑历史").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText(message).assertDoesNotExist()
         assertEquals(0, writes.get())
     }
 }

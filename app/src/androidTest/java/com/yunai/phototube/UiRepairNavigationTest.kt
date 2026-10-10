@@ -13,15 +13,20 @@ class UiRepairNavigationTest : RemoteAppTest() {
     override fun mutationFixture(request:RecordedRequest):MockResponse {
         writes.incrementAndGet();return MockResponse().setResponseCode(405)
     }
-    @Test fun editorIsDirectlyAvailableAndReturnsThroughViewerToSameAlbum() {
+    @Test fun viewerHasNoContentEditingAndReturnsToSameAlbum() {
         rule.onNodeWithContentDescription("相册标签").performClick();waitTag("album-restore-album")
         rule.onNodeWithTag("album-restore-album").performClick();waitTag("album-grid")
         val before=rule.onNodeWithTag("album-media-restore-0").fetchSemanticsNode().boundsInRoot
         rule.onNodeWithTag("album-media-restore-0").performClick();waitTag("media-viewer")
-        rule.onNodeWithContentDescription("编辑照片").assertIsDisplayed().performClick();waitTag("crop-canvas")
-        auditShot("repair-direct-editor")
-        rule.onAllNodesWithContentDescription("返回").onLast().performClick()
-        rule.waitUntil(10000) {rule.onAllNodesWithTag("crop-canvas").fetchSemanticsNodes().isEmpty()}
+        rule.onNodeWithContentDescription("编辑照片").assertDoesNotExist()
+        rule.onNodeWithContentDescription("编辑视频").assertDoesNotExist()
+        rule.onNodeWithContentDescription("分享").assertIsDisplayed()
+        rule.onNodeWithContentDescription("照片与视频信息").assertIsDisplayed()
+        rule.onNodeWithContentDescription("更多操作").performClick()
+        rule.onNodeWithText("编辑历史与原图").assertDoesNotExist()
+        rule.onNodeWithText("查看信息").performClick()
+        rule.onNodeWithText("编辑标签").assertIsDisplayed()
+        androidx.test.uiautomator.UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()).pressBack()
         rule.onNodeWithTag("media-viewer").assertIsDisplayed()
         rule.onNodeWithContentDescription("关闭照片").performClick()
         rule.waitUntil(10000) {rule.onAllNodesWithTag("media-viewer").fetchSemanticsNodes().isEmpty()}

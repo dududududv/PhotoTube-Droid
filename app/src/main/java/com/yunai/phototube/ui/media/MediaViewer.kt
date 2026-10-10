@@ -112,8 +112,6 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var zoomed by remember { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
     var info by rememberSaveable { mutableStateOf(false) }
-    var editingPhoto by rememberSaveable(current.id) {mutableStateOf(false)}
-    var editHistory by rememberSaveable(current.id) { mutableStateOf(false) }
     var editingTags by rememberSaveable(current.id) { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf(false) }
@@ -134,7 +132,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var motionPlaying by remember(current.remote) {mutableStateOf(false)}
     val motionUrl=remote?.motionUrl()
     val videoMode=current.video || (motionPlaying && motionUrl!=null)
-    val playback = if(videoMode) rememberVideoPlayback(current, mediaReady && !closing && !pager.isScrollInProgress && !info && !editHistory && !editingPhoto && !editingTags && !delete && !more && !sharing,if(motionPlaying) motionUrl else null) else null
+    val playback = if(videoMode) rememberVideoPlayback(current, mediaReady && !closing && !pager.isScrollInProgress && !info && !editingTags && !delete && !more && !sharing,if(motionPlaying) motionUrl else null) else null
     LaunchedEffect(playback?.wantsPlay) {
         if(motionPlaying && playback?.player?.playbackState==androidx.media3.common.Player.STATE_ENDED) motionPlaying=false
     }
@@ -340,7 +338,6 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                             GlassActionMenu(more, {more=false}, scene, buildList {
                                 add(GlassMenuAction(if(paged) "当前已加载 ${media.size} 项" else "${pager.currentPage+1} / ${media.size}", enabled=false, onClick={}))
                                 add(GlassMenuAction("查看信息", onClick={info=true}))
-                                if(current.remote!=null && !current.video) add(GlassMenuAction("编辑历史与原图", onClick={editHistory=true}))
                                 if(current.remote!=null) {
                                     add(GlassMenuAction(if(current.remote.detail?.optBoolean("archived")==true) "取消归档" else "归档",
                                         enabled=!remoteBusy && current.remote.detail!=null,
@@ -378,9 +375,6 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                         if(playback != null) VideoControls(playback,scene,landscapeVideo,gestureSeek)
                         if(!current.video || media.size > 1) Filmstrip(media,pager.currentPage) { index -> scope.launch { pager.animateScrollToPage(index) } }
                         if(!landscapeVideo) Row(Modifier.fillMaxWidth().padding(horizontal=24.dp,vertical=10.dp),horizontalArrangement=Arrangement.SpaceBetween) {
-                            if(!current.video && current.remote?.asset?.fileName?.substringAfterLast('.')?.lowercase() in setOf("jpg","jpeg","png")) {
-                                MediaGlassButton("编辑照片",MediaSymbol.EDIT,scene,{editingPhoto=true},enabled=!remoteBusy)
-                            }
                             MediaGlassButton(if(sharing) "正在准备分享" else "分享",MediaSymbol.SHARE,scene,::share)
                             val glass = LocalGlassAppearance.current
                             Row(Modifier.height(48.dp).drawBackdrop(backdrop=scene,shape={RoundedCornerShape(50)},
@@ -416,8 +410,6 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
             onConfirm={privateConfirm=false;if(current.remote?.server?.privateMedia==true) remoteAction(AssetAction.PRIVATE,false) else privateAuthorization=true},
             onDismiss={privateConfirm=false})
         if(privateAuthorization) current.remote?.let {source -> com.yunai.phototube.ui.remote.PrivateMutationGate(source.server,onClose={privateAuthorization=false},onAuthorized={remoteAction(AssetAction.PRIVATE,true,it)})}
-        if(editingPhoto) current.remote?.let {source -> com.yunai.phototube.ui.remote.PhotoEditorScreen(source,onSaved={editingPhoto=false;onRemoteChanged()},onClose={editingPhoto=false})}
-        if(editHistory) current.remote?.let {source -> com.yunai.phototube.ui.remote.EditHistoryScreen(source,onChanged=onRemoteChanged,onClose={editHistory=false})}
         if(editingTags) current.remote?.let {source -> PhotoTagEditor(source,onChanged=onRemoteChanged,onClose={editingTags=false})}
         if(delete) GlassConfirmation(scene, title="删除${if(current.video) "视频" else "照片"}？",
             message=if(current.remote!=null) "移入回收站后可以恢复，NAS 原文件会保留。" else "从当前演示图库移除，可通过撤销恢复。",

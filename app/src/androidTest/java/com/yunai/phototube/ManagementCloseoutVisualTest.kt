@@ -9,22 +9,6 @@ import java.io.File
 
 /** Real navigation and rendered pages; fixture data only, no mutations. */
 class ManagementCloseoutVisualTest : RemoteAppTest() {
-    private var restoreFixture = false
-    @Test fun auditRestoreOriginalCancel() {
-        restoreFixture = true
-        rule.onNodeWithContentDescription("相册标签").performClick(); waitTag("album-restore-album")
-        rule.onNodeWithTag("album-restore-album").performClick(); waitTag("album-detail")
-        rule.onNodeWithTag("album-media-restore-0").performTouchInput {click(androidx.compose.ui.geometry.Offset(12f,12f))}
-        waitTag("media-viewer")
-        rule.onNodeWithContentDescription("更多操作").performClick()
-        rule.onNodeWithText("编辑历史与原图").performClick(); waitTag("edit-history-list")
-        rule.waitUntil(10000) {rule.onAllNodes(hasText("恢复原图") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
-        rule.onNodeWithText("恢复原图",substring=false).performClick()
-        rule.onNodeWithText("恢复原图？").assertIsDisplayed()
-        auditShot("restore-original-confirm")
-        rule.onNodeWithText("取消",substring=false).performClick()
-        rule.onNodeWithText("恢复原图",substring=false).assertIsEnabled()
-    }
     @Test fun inspectLocalThumbnailTransport() = kotlinx.coroutines.runBlocking {
         val server = requireNotNull(wall.server)
         val result = server.imageLoader.execute(coil3.request.ImageRequest.Builder(app)
@@ -35,12 +19,10 @@ class ManagementCloseoutVisualTest : RemoteAppTest() {
     override fun readFixture(request: RecordedRequest): MockResponse? {
         val path = request.requestUrl!!.encodedPath
         val body = when {
-            restoreFixture && path == "/api/v1/assets/restore-0" -> """{"id":"restore-0","kind":"PHOTO","state":"BROWSABLE","fileName":"mock-edited.jpg","activeEdit":{"editVersionId":"visual-edit","sourceState":"STALE"}}"""
             path == "/api/v1/auth/session" -> """{"authenticated":true,"passwordSet":true,"user":{"username":"fixture"},"privateAccessUnlocked":false,"originalDeleteEnabled":false}"""
             path == "/api/v1/health" -> """{"status":"ok","database":{"reachable":true,"migrationVersion":1},"xmpExport":{"available":false}}"""
             path == "/api/v1/system/status" -> """{"generatedAt":"2026-10-08T00:00:00Z","alerts":[]}"""
             path.endsWith("/syncs") -> """{"items":[{"id":"visual-scan","state":"PARTIAL","createdAt":"2026-10-08T00:00:00Z","succeededPaths":3,"failedPaths":1,"offlinePaths":1,"error":"旅行目录暂时离线，已保留原有相册成员。请确认存储连接后再次扫描。"}],"nextCursor":null}"""
-            path.endsWith("/edit-versions") -> """{"items":[{"id":"visual-edit","sourceContentHash":"${"a".repeat(64)}","active":false,"sourceState":"STALE","renderState":"READY","outputWidth":3200,"outputHeight":2400,"createdAt":"2026-10-08T00:00:00Z","transform":{}}],"nextCursor":null}"""
             else -> return null
         }
         return MockResponse().setHeader("Content-Type", "application/json").setBody(body)
@@ -93,15 +75,8 @@ class ManagementCloseoutVisualTest : RemoteAppTest() {
             rule.onNodeWithTag("album-media-restore-0").performTouchInput { click(androidx.compose.ui.geometry.Offset(12f,12f)) }
             capture("after-media-click", mode)
             waitTag("media-viewer")
-            rule.onNodeWithContentDescription("更多操作").performClick()
-            rule.onNodeWithText("编辑历史与原图").performClick(); waitTag("edit-history-list")
-            rule.onNodeWithTag("edit-history-list").performScrollToNode(hasText("正在显示原图"))
-            rule.onNodeWithText("正在显示原图").assertIsDisplayed().assertHasNoClickAction().assertIsEnabled()
-            capture("original-state", mode)
-            rule.onNodeWithTag("edit-history-list").performScrollToNode(hasText("使用此版本"))
-            rule.onNodeWithText("使用此版本").assertIsDisplayed().assertIsNotEnabled()
-            capture("edit-history", mode)
-            back(); rule.waitUntil(10000) { rule.onAllNodesWithTag("edit-history-list").fetchSemanticsNodes().isEmpty() }
+            rule.onNodeWithContentDescription("编辑照片").assertDoesNotExist()
+            capture("viewer", mode)
             rule.onNodeWithContentDescription("关闭照片").performClick()
             rule.onNodeWithContentDescription("返回相册列表").performClick()
             rule.waitUntil(10000) { rule.onAllNodesWithTag("album-detail").fetchSemanticsNodes().isEmpty() }
