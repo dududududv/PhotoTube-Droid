@@ -275,6 +275,7 @@ private fun Toolbar(
             IconButton(onClick=onCreateAlbum,modifier=Modifier.size(48.dp).testTag("create-album-button")) {
                 Icon(Icons.Rounded.Add,"新建相册",Modifier.size(22.dp),tint=AppTheme.colors.text)
             }
+            Spacer(Modifier.width(0.5.dp).height(20.dp).background(AppTheme.colors.separator))
             IconButton(onClick=onAction,modifier=Modifier.size(48.dp).testTag("settings-button")) {
                 Icon(Icons.Outlined.Settings,"设置",Modifier.size(22.dp),tint=AppTheme.colors.text)
             }
