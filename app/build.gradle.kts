@@ -1,16 +1,7 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
-
-val localDevelopment = Properties().apply {
-    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
-}
-val localIntegration = providers.gradleProperty("phototube.localIntegration")
-    .orElse(localDevelopment.getProperty("phototube.localIntegration", "false"))
-    .map { it.toBooleanStrict() }
 
 android {
     namespace = "com.yunai.phototube"
@@ -33,11 +24,7 @@ android {
 
 android { buildFeatures { compose = true; buildConfig = true }
     buildTypes {
-        getByName("debug") {
-            buildConfigField("boolean", "LOCAL_INTEGRATION", localIntegration.get().toString())
-        }
         getByName("release") {
-            buildConfigField("boolean", "LOCAL_INTEGRATION", "false")
             signingConfig = signingConfigs.getByName("debug")
         }
     }

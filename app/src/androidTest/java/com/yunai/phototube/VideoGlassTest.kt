@@ -4,16 +4,13 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.SystemClock
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import kotlin.math.abs
 
-class VideoGlassTest {
-    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+class VideoGlassTest : LocalFixtureAppTest() {
 
     private fun screenshot(name: String): Bitmap {
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation

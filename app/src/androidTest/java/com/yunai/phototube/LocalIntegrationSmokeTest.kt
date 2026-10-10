@@ -25,7 +25,7 @@ class LocalIntegrationSmokeTest {
 
     @Test fun loginReadGalleryAndRestoreSession() {
         val args = InstrumentationRegistry.getArguments()
-        assumeTrue(LocalConnection.enabled && args.getString("localIntegrationSmoke") == "true")
+        assumeTrue(args.getString("localIntegrationSmoke") == "true")
         val username = requireNotNull(args.getString("localUsername"))
         val password = requireNotNull(args.getString("localPassword"))
         ActivityScenario.launch(MainActivity::class.java).use {
@@ -49,7 +49,7 @@ class LocalIntegrationSmokeTest {
 
     @Test fun authenticatedThumbnailsAndOriginalActuallyDecode() = runBlocking {
         val args = InstrumentationRegistry.getArguments()
-        assumeTrue(LocalConnection.enabled && args.getString("localIntegrationSmoke") == "true")
+        assumeTrue(args.getString("localIntegrationSmoke") == "true")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val server = PhotoTubeServer(context, LocalConnection.BASE, {})
         try {
@@ -74,7 +74,9 @@ class LocalIntegrationSmokeTest {
             }
             // Use the production loader and client unchanged: no cache-header stripping or fake connectivity.
             repeat(2) { for (url in thumbnails) decode(url) }
-            val photo = assets.first { it.kind == "PHOTO" && it.fileName.endsWith(".png", ignoreCase = true) }
+            val photo = requireNotNull(assets.firstOrNull { it.kind == "PHOTO" &&
+                it.fileName.substringAfterLast('.').lowercase() in setOf("png", "jpg", "jpeg", "webp", "avif")
+            }) { "Local synthetic dataset must include a decodable photo original" }
             decode(server.original(photo.id))
             println("Decoded ${thumbnails.size * 2} local synthetic thumbnails and 1 original; memory cache disabled")
         } finally {

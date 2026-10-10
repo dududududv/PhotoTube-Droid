@@ -48,15 +48,14 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
         fun normalize(address:String):String {
             val url=address.trim().toHttpUrl()
             require(url.username.isEmpty() && url.password.isEmpty() && url.query==null && url.fragment==null && url.encodedPath=="/") {"请填写服务根地址，不要包含 /api/v1、账号或查询参数"}
-            require(url.host in setOf("mock.phototube.invalid","localhost","127.0.0.1","::1")) {"仅允许本地联调或隔离测试地址"}
+            require(url.host in setOf("localhost","127.0.0.1","::1")) {"仅允许本地联调或隔离测试地址"}
             return url.toString().trimEnd('/')
         }
     }
     val base=normalize(address)
     val origin="$base/".toHttpUrl()
     val privateMedia get()=privateAllowed!=null
-    init { require(LocalConnection.allowsTransport(origin, transport!=null)) {"此构建未启用该本地联调地址"} }
-    private val mock=LocalMockData(context)
+    init { require(LocalConnection.allowsTransport(origin, transport!=null)) {"禁止访问未授权服务"} }
     val cookies=sessionCookies ?: SessionCookieJar(context,origin)
     val client=(transport?.newBuilder() ?: OkHttpClient.Builder()).cookieJar(cookies).proxy(java.net.Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
         .eventListenerFactory(MediaLoadDiagnostics.networkEvents)
@@ -115,12 +114,7 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
             }
             response
         }
-        // In-process responses still pass through lock and response policies above.
-        // This terminal interceptor prevents mock requests from reaching DNS/sockets.
-        .addInterceptor {chain ->
-            if(origin.host=="mock.phototube.invalid") mock.respond(chain.request())
-            else chain.proceed(chain.request())
-        }.build()
+        .build()
     private val endpoints=Retrofit.Builder().baseUrl("$base/api/v1/").client(client).build().create(PhotoTubeEndpoints::class.java)
     @OptIn(coil3.annotation.ExperimentalCoilApi::class)
     private fun createImageLoader()=ImageLoader.Builder(context).components {
@@ -128,7 +122,7 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
         add(OkHttpNetworkFetcherFactory(callFactory={client},connectivityChecker={ context ->
             // adb reverse reaches this exact local service even when Android has no default network.
             // Keep the same authenticated client and its origin/redirect guards.
-            if(LocalConnection.enabled && LocalConnection.isLocalDevelopment(origin)) coil3.network.ConnectivityChecker.ONLINE
+            if(LocalConnection.isLocalDevelopment(origin)) coil3.network.ConnectivityChecker.ONLINE
             else coil3.network.ConnectivityChecker(context)
         }))
     }.eventListenerFactory(MediaLoadDiagnostics.imageEvents).diskCache(null)

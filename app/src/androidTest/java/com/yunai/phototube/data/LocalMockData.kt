@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 /** In-process fixtures. No DNS, socket, remote service, or private session is used. */
 internal class LocalMockData(private val context: Context) {
-    companion object { const val BASE = "https://mock.phototube.invalid" }
+    companion object { const val BASE = "http://127.0.0.1:1" }
     private val pictures = listOf(R.drawable.mountains,R.drawable.lake,R.drawable.forest,R.drawable.flowers,R.drawable.meadow,R.drawable.street)
     private val names = listOf("山间","湖畔","森林","花园","草地","街道")
     private fun asset(index: Int): JSONObject = JSONObject().put("id","mock-$index")

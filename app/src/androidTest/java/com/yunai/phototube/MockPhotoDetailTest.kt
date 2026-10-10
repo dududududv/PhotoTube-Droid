@@ -3,16 +3,13 @@ package com.yunai.phototube
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
-import org.junit.Rule
 import org.junit.Test
 import java.io.File
 
-/** Real app entry, in-process LocalMockData and bundled sample images only. */
-class MockPhotoDetailTest {
-    @get:Rule val rule = createAndroidComposeRule<MainActivity>()
+/** Test-only injected gallery and bundled sample images. */
+class MockPhotoDetailTest : LocalFixtureAppTest() {
     private fun waitFor(matcher: SemanticsMatcher) = rule.waitUntil(15000) {
         rule.onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty()
     }

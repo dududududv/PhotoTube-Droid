@@ -24,7 +24,9 @@ class FilterScopeLayoutTest {
         var applied=WallFilters(takenTo="2026-09-02T23:59:59Z")
         rule.setContent {PhotoTubeTheme {
             val context=LocalContext.current
-            val server=remember {PhotoTubeServer(context,LocalMockData.BASE,{})}
+            val fixture=remember {LocalMockFixture(context)}
+            val server=remember {fixture.server()}
+            DisposableEffect(fixture) {onDispose {server.dispose();fixture.close()}}
             val density=LocalDensity.current
             var current by remember {mutableStateOf(applied)}
             CompositionLocalProvider(LocalDensity provides Density(density.density,1.8f)) {

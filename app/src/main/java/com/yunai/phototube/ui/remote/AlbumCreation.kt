@@ -102,7 +102,7 @@ internal fun CreateRemoteAlbum(repository:AlbumRepository,onClose:()->Unit,onCre
             GlassSegmentedControl(listOf("NORMAL" to "普通相册", "PATH_SYNC" to "同步目录", "SMART" to "智能相册"),
                 kind, { kind = it }, enabled = editable)
             if(kind=="PATH_SYNC") {
-                Text("选择本地示例目录。创建只保存 mock 配置，不会访问真实媒体。")
+                Text("选择服务端目录，创建后按相册配置同步内容。")
                 Text(if(path.isEmpty()) "媒体根目录" else path)
                 if(path.isNotEmpty()) GlassSettingsAction("上一级",{path=path.substringBeforeLast('/',"")},enabled=editable)
                 if(loading) LinearProgressIndicator(Modifier.fillMaxWidth())

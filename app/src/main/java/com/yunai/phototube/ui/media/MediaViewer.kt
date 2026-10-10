@@ -76,11 +76,6 @@ import java.io.File
 import kotlin.math.abs
 
 internal data class ViewerRequest(val media: List<Photo>, val initialId: Int, val bounds: Map<Int, Rect>, val sourceCornerRadius: androidx.compose.ui.unit.Dp = 22.dp, val resolveSource: ((Int) -> Rect?)? = null)
-internal val ViewerRequestSaver = listSaver<ViewerRequest?,Int>(
-    save={request -> request?.takeIf {it.media.none {photo->photo.remote!=null}}?.let {listOf(it.initialId)+it.media.map {photo->photo.id}} ?: emptyList()},
-    restore={saved -> if(saved.isEmpty()) null else ViewerRequest(saved.drop(1).mapNotNull {id->photos.firstOrNull {it.id==id}},saved.first(),emptyMap())}
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite: (Int) -> Unit, onDelete: (Photo) -> Unit, onClose: () -> Unit, onRemoteChanged: () -> Unit = {}, onPageVisible: (Photo) -> Unit = {}, pagingStatus: @Composable () -> Unit = {}, paged: Boolean = false) {

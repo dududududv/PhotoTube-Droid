@@ -17,7 +17,6 @@ import androidx.compose.ui.semantics.contentDescription
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import androidx.compose.ui.platform.LocalContext
-import com.yunai.phototube.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -29,15 +28,6 @@ internal data class Photo(val id: Int, val name: String, val date: String, val f
         java.time.OffsetDateTime.parse(asset.takenAt).atZoneSameInstant(zone).toLocalDate()
     } ?: java.time.LocalDate.parse(date, java.time.format.DateTimeFormatter.ofPattern("yyyy年M月d日"))
 }
-internal val photos = listOf(
-    Photo(R.drawable.lake, "山间来信", "2026年9月7日", true),
-    Photo(R.drawable.street, "走过老街", "2026年9月7日"),
-    Photo(R.drawable.flowers, "风里的花", "2026年9月6日", true),
-    Photo(R.drawable.meadow, "草地上的午后", "2026年9月6日"),
-    Photo(R.drawable.mountains, "远山", "2026年8月23日", true),
-    Photo(R.drawable.forest, "森林与湖", "2026年8月22日"),
-    Photo(R.raw.glass_video, "城市片段", "2026年9月5日", video = true)
-)
 internal data class MediaMetadata(val width: Int, val height: Int, val bytes: Long, val duration: Long = 0L, val poster: Bitmap? = null)
 
 /** Share the same decoded pixels between the grid, transition and detail view.

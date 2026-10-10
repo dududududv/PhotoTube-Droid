@@ -20,7 +20,7 @@ internal class SessionCookieJar(context:Context,private val origin:HttpUrl):Cook
     init { PhotoTubeServer.normalize(origin.toString()) }
     // Never restore a former real-account session, including in test activities.
     private val prefs=context.getSharedPreferences(
-        if(LocalConnection.enabled && LocalConnection.isLocalDevelopment(origin)) "server_session_local_dev" else "server_session_mock",
+        if(LocalConnection.isLocalDevelopment(origin)) "server_session_local_dev" else "server_session_test",
         Context.MODE_PRIVATE)
     private val storageKey=java.security.MessageDigest.getInstance("SHA-256").digest(origin.toString().toByteArray()).joinToString(""){"%02x".format(it)}
     private fun key():SecretKey {

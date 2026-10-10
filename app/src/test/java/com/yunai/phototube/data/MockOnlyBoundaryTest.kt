@@ -9,8 +9,8 @@ class MockOnlyBoundaryTest {
             assertThrows(IllegalArgumentException::class.java) { PhotoTubeServer.normalize(address) }
         }
     }
-    @Test fun onlyInProcessMockAndExplicitLoopbackFixturesCanNormalize() {
-        assertEquals(LocalMockData.BASE, PhotoTubeServer.normalize(LocalMockData.BASE))
+    @Test fun removedMockOriginIsRejectedAndLoopbackCanNormalize() {
+        assertThrows(IllegalArgumentException::class.java) { PhotoTubeServer.normalize("https://mock.phototube.invalid") }
         assertEquals("https://localhost:12345", PhotoTubeServer.normalize("https://localhost:12345/"))
     }
 }

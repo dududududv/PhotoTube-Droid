@@ -1,17 +1,14 @@
 package com.yunai.phototube
 
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
-import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.*
 import java.io.File
 
-/** Only the in-process LocalMockData and bundled media used by MainActivity. */
-class AlbumShelvesTest {
-    @get:Rule val rule=createAndroidComposeRule<MainActivity>()
+/** Test-only injected gallery and bundled media. */
+class AlbumShelvesTest : LocalFixtureAppTest() {
     private fun waitTag(tag:String) = rule.waitUntil(15000) {rule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()}
     private fun shot(name:String) {
         rule.waitForIdle()

@@ -16,7 +16,8 @@ import org.junit.Test
 class BulkAnchorTest {
     @get:Rule val rule=createComposeRule()
     @Test fun missingRowLeaderUsesSelectedPhotoAfterLoading() {
-        val server=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,LocalMockData.BASE,{})
+        val fixture=LocalMockFixture(InstrumentationRegistry.getInstrumentation().targetContext)
+        val server=fixture.server()
         val loading=androidx.paging.LoadStates(androidx.paging.LoadState.Loading,androidx.paging.LoadState.NotLoading(false),androidx.paging.LoadState.NotLoading(false))
         val ready=androidx.paging.LoadStates(androidx.paging.LoadState.NotLoading(true),androidx.paging.LoadState.NotLoading(true),androidx.paging.LoadState.NotLoading(true))
         val flow=kotlinx.coroutines.flow.MutableStateFlow(PagingData.empty<WallEntry>(loading))
@@ -33,11 +34,12 @@ class BulkAnchorTest {
             rule.onNodeWithTag("bulk-asset-synthetic-121").assertIsDisplayed().assertIsSelected()
             rule.onNodeWithTag("bulk-grid").performScrollToIndex(0)
             rule.onNodeWithTag("bulk-anchor-unavailable").assertIsDisplayed()
-        } finally {server.dispose()}
+        } finally {server.dispose();fixture.close()}
     }
 
     @Test fun missingAnchorSettlesAndDoesNotJumpWhenItAppearsLater() {
-        val server=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,LocalMockData.BASE,{})
+        val fixture=LocalMockFixture(InstrumentationRegistry.getInstrumentation().targetContext)
+        val server=fixture.server()
         fun assets(start:Int,end:Int)=(start until end).map {i -> WallEntry.Asset(RemoteAsset("synthetic-$i","PHOTO","BROWSABLE","2026-09-01T00:00:00Z",0,"fixture-$i",null,48,32,false,null))}
         val ready=androidx.paging.LoadStates(androidx.paging.LoadState.NotLoading(true),androidx.paging.LoadState.NotLoading(true),androidx.paging.LoadState.NotLoading(true))
         val flow=kotlinx.coroutines.flow.MutableStateFlow(PagingData.from<WallEntry>(assets(0,100),ready))
@@ -53,11 +55,12 @@ class BulkAnchorTest {
             rule.waitForIdle()
             rule.onNodeWithTag("bulk-asset-synthetic-0").assertIsDisplayed()
             rule.onNodeWithTag("bulk-asset-synthetic-121").assertDoesNotExist()
-        } finally {server.dispose()}
+        } finally {server.dispose();fixture.close()}
     }
 
     @Test fun suppliedPagingWindowOpensAtAnchorAndDoesNotForceItAfterUserScroll() {
-        val server=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,LocalMockData.BASE,{})
+        val fixture=LocalMockFixture(InstrumentationRegistry.getInstrumentation().targetContext)
+        val server=fixture.server()
         val assets=(0 until 150).map {i -> WallEntry.Asset(RemoteAsset("synthetic-$i","PHOTO","BROWSABLE","2026-09-01T00:00:00Z",0,"fixture-$i",null,48,32,false,null))}
         val flow=flowOf(PagingData.from<WallEntry>(assets))
         try {
@@ -70,6 +73,6 @@ class BulkAnchorTest {
             rule.onNodeWithTag("bulk-grid").performScrollToIndex(0)
             rule.onNodeWithText("已选 1 项").assertIsDisplayed()
             rule.onNodeWithTag("bulk-asset-synthetic-121").assertDoesNotExist()
-        } finally {server.dispose()}
+        } finally {server.dispose();fixture.close()}
     }
 }

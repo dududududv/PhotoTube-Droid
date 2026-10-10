@@ -74,10 +74,10 @@ internal fun SettingsScreen(
                     Text("PhotoTube", color = AppTheme.colors.secondary, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp, bottom = 28.dp))
                 }
                 if(onServer!=null) item {
-                    SectionLabel("本地演示")
+                    SectionLabel("服务器")
                     SettingsGroup {
                         Row(Modifier.fillMaxWidth().clickable(onClick=onServer).padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Text("重新载入 Mock 数据",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
+                            Text("重新连接服务器",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
                             Icon(Icons.Outlined.KeyboardArrowRight,null,tint=AppTheme.colors.secondary)
                         }
                         if(onRemoteSettings!=null) {

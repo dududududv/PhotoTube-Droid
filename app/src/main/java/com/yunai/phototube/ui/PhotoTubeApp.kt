@@ -59,14 +59,6 @@ import com.yunai.phototube.ui.theme.*
 import com.yunai.phototube.R
 import com.yunai.phototube.glass.*
 
-private data class Album(val key: String, val title: String, val count: String, val cover: Photo)
-private val albums = listOf(
-    Album("nature", "山野之间", "3 张照片", photos[0]),
-    Album("daily", "漫步日常", "2 张照片 · 1 段视频", photos[1]),
-    Album("flowers", "花与风", "1 张照片", photos[2]),
-    Album("videos", "视频", "1 段视频", photos[6])
-)
-
 @Composable
 fun PhotoTubeApp() {
     PhotoTubeTheme { PhotoTubeContent() }
@@ -83,18 +75,11 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
         var albumRevision by rememberSaveable {mutableIntStateOf(0)}
         var createAlbum by rememberSaveable { mutableStateOf(false) }
         var showVideo by rememberSaveable { mutableStateOf(false) }
-        var viewer by rememberSaveable(stateSaver = ViewerRequestSaver) { mutableStateOf<ViewerRequest?>(null) }
         var remoteViewer by rememberConfigurationState(wall.server, enabled = wall.stage == com.yunai.phototube.data.ConnectionStage.READY) {mutableStateOf<PagedViewerSession?>(null)}
         LaunchedEffect(wall.stage,wall.server) {
             if(wall.stage!=com.yunai.phototube.data.ConnectionStage.READY) {remoteViewer=null;libraryTool=null;configurationState.clear()}
         }
-        var favoriteIds by rememberSaveable { mutableStateOf(photos.filter {it.favorite}.map {it.id}) }
-        var removedIds by rememberSaveable { mutableStateOf(emptyList<Int>()) }
-        var undoPhoto by remember { mutableStateOf<Photo?>(null) }
-        val mediaBounds = remember { mutableMapOf<Int,Rect>() }
 
-        var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-        var newestFirst by rememberSaveable { mutableStateOf(true) }
         var query by rememberSaveable { mutableStateOf("") }
         var albumQuery by rememberSaveable { mutableStateOf("") }
         val libraryState = rememberLazyListState()
@@ -159,11 +144,6 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
             if (tab != index) compact = false
             tab = index
         }
-        val visible = photos.filter { it.id !in removedIds && (!favoritesOnly || it.id in favoriteIds) && (query.isBlank() || it.name.contains(query)) }
-            .let { if (newestFirst) it.sortedByDescending {photo -> photo.takenOn} else it.sortedBy {photo -> photo.takenOn} }
-        fun openMedia(photo: Photo) { focusManager.clearFocus();viewer = ViewerRequest(visible,photo.id,mediaBounds.toMap(),resolveSource={mediaBounds[it]}) }
-        val visibleAlbums = albums.filter { albumQuery.isBlank() || it.title.contains(albumQuery) }
-        CompositionLocalProvider(LocalMediaBounds provides mediaBounds) {
         Box(Modifier.fillMaxSize().background(AppTheme.colors.background)
             .then(if(panel=="filter") Modifier.clearAndSetSemantics {} else Modifier)) {
             // Photos extend behind the floating controls; only the controls apply glass.
@@ -189,8 +169,6 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
                 Modifier.nestedScroll(scrollConnection).background(AppTheme.colors.background),
                 query=albumQuery,searchActive=panel=="search",revision=albumRevision,onLibraryTool={libraryTool=it},createRequested=createAlbum,onCreateConsumed={createAlbum=false},onLibraryChanged=wall::refresh,onConnect={tab=0;wall.configure()})
             }
-            if(undoPhoto != null && panel?.startsWith("album:") != true) UndoDeletion({undoPhoto?.let {removedIds=removedIds-it.id};undoPhoto=null},backdrop,
-                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start=16.dp,end=16.dp,bottom=100.dp))
             // A feathered scroll edge keeps theme-colored system text legible over media.
             val statusHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             Box(Modifier.fillMaxWidth().height(statusHeight + 16.dp).background(Brush.verticalGradient(
@@ -223,7 +201,6 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
 
             }
         }
-        }
         Box(Modifier.fillMaxSize().then(if(panel=="filter") Modifier.clearAndSetSemantics {} else Modifier)) {
         SearchDock(panel=="search",tab==0,if(tab==0) query else albumQuery,
             onValue={if(tab==0) query=it else albumQuery=it},onOpen=::beginSearch,onClose=::endSearch,
@@ -240,17 +217,11 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
         if (panel == "filter") FilterMenu(backdrop,cornerInsets,glassStrength,wall.filters,
             onChange=wall::updateFilters,onDismiss={panel=null},server=wall.server)
         if(panel=="bulk-assets") wall.server?.let {api -> com.yunai.phototube.ui.remote.BulkAssetsScreen(api,wall.filters,wall.groups.sumOf {it.count},onChanged=wall::refresh,onClose={panel=null},groups=wall.groups,sourceFlow=wall.pageFlow,initialRowKey=bulkRowKey,initialRowOffset=bulkRowOffset,initialSelectedId=bulkSelectedId)}
-        if (panel?.startsWith("album:") == true) {
-            val album = albums.first { it.key == panel!!.substringAfter(":") }
-            AlbumDetail(album.title,albumMedia(album.key).filter {it.id !in removedIds},favoriteIds.toSet(),
-                onOpen={photo,sequence,bounds -> viewer=ViewerRequest(sequence,photo.id,bounds.toMap(),sourceCornerRadius=4.dp,resolveSource={bounds[it]})},
-                undoPhoto=undoPhoto,onUndo={undoPhoto?.let {removedIds=removedIds-it.id};undoPhoto=null},onClose={panel=null})
-        }
         if (panel == "settings") {
             SettingsScreen(
                 haptics, { haptics = it }, wall.filters.favorite==true, { wall.updateFilters(wall.filters.copy(favorite=if(it) true else null)) }, true, {},
                 glassStrength, theme::updateOpacity,
-                onServer = { panel=null;tab=0;wall.connect(com.yunai.phototube.data.LocalConnection.defaultBase) },
+                onServer = { panel=null;tab=0;wall.connect(com.yunai.phototube.data.LocalConnection.BASE) },
                 onLibraryTool = if(wall.server!=null) {{libraryTool=it}} else null,
                 onRemoteSettings = if(wall.stage==com.yunai.phototube.data.ConnectionStage.READY) {{panel="server-settings"}} else null,
                 onAppearance = theme::updateGlass, onVideo = { showVideo = true }, onClose = { panel = null }
@@ -264,11 +235,7 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
         remoteViewer?.let {request ->
             PagedMediaViewer(request,onClose={remoteViewer=null},onRemoteChanged=wall::refresh)
         }
-        viewer?.let { request ->
-            MediaViewer(request,favoriteIds.toSet(),onFavorite={id -> favoriteIds=if(id in favoriteIds) favoriteIds-id else favoriteIds+id},
-                onDelete={photo -> removedIds=removedIds+photo.id;undoPhoto=photo},onClose={viewer=null})
-        }
-        BackHandler(panel == null && libraryTool == null && viewer == null && remoteViewer == null && (tab != 0 || query.isNotEmpty() || favoritesOnly)) { tab = 0; query = ""; favoritesOnly = false }
+        BackHandler(panel == null && libraryTool == null && remoteViewer == null && (tab != 0 || query.isNotEmpty())) { tab = 0; query = "" }
     }
 }
 
@@ -296,42 +263,6 @@ private fun Toolbar(
         ) {
             Icon(if (isLibrary) Icons.Rounded.FilterList else Icons.Outlined.Settings, null, Modifier.size(22.dp), tint = if(isLibrary && filterActive) AppTheme.colors.accent else AppTheme.colors.text)
         }
-    }
-}
-
-@Composable
-private fun MonthLabel(month: String, detail: String) {
-    Row(Modifier.padding(bottom = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(month, fontSize = 16.sp, color = AppTheme.colors.text)
-        Text("  ·  $detail", fontSize = 15.sp, color = AppTheme.colors.secondary)
-    }
-}
-
-private val LocalMediaBounds = staticCompositionLocalOf<MutableMap<Int,Rect>> { mutableMapOf() }
-
-@Composable
-private fun PhotoTile(photo: Photo, modifier: Modifier, caption: String? = null, onClick: (Photo) -> Unit) {
-    val bounds = LocalMediaBounds.current
-    Box(modifier.mediaBounds(photo.id,bounds).mediaTransitionSource().clip(RoundedCornerShape(22.dp))
-        .clickable { onClick(photo) }.semantics { contentDescription=photo.name }) {
-        MediaArtwork(photo,Modifier.fillMaxSize(),description=null)
-        if(photo.video) Text(mediaTime(rememberMediaMetadata(photo)?.duration ?: 0L),color=MediaColors.text,fontSize=12.sp,
-            modifier=Modifier.align(Alignment.BottomEnd).padding(12.dp).background(MediaColors.scrim.copy(.4f),RoundedCornerShape(6.dp)).padding(horizontal=6.dp,vertical=3.dp))
-        if (caption != null) {
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(65.dp).background(Brush.verticalGradient(listOf(Color.Transparent, MediaColors.scrim.copy(.38f)))))
-            Text(caption, Modifier.align(Alignment.BottomStart).padding(13.dp), color = MediaColors.text, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
-private fun AlbumCard(title: String, count: String, photo: Photo, modifier: Modifier, onClick: () -> Unit) {
-    Column(modifier.clickable(onClick = onClick)) {
-        MediaArtwork(photo, description = title, modifier =
-            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp)).testTag("album-cover-$title"), contentScale = ContentScale.Crop)
-        Spacer(Modifier.height(8.dp))
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = AppTheme.colors.text)
-        Text(count, fontSize = 12.sp, color = AppTheme.colors.secondary)
     }
 }
 

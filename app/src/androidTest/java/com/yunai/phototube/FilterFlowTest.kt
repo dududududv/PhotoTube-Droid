@@ -2,16 +2,13 @@ package com.yunai.phototube
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
-import org.junit.Rule
 import org.junit.Test
 import java.io.File
 
-/** MainActivity is hard-wired to in-process LocalMockData and bundled media. */
-class FilterFlowTest {
-    @get:Rule val rule=createAndroidComposeRule<MainActivity>()
+/** Test-only injected synthetic gallery. */
+class FilterFlowTest : LocalFixtureAppTest() {
     private fun waitText(text:String) = rule.waitUntil(10000) {rule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()}
     private fun shot(name:String) {
         rule.waitForIdle();Thread.sleep(350)

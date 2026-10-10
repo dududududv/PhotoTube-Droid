@@ -29,7 +29,7 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
     preferenceName:String="server_connection"
 ):AndroidViewModel(application) {
     private val prefs=application.getSharedPreferences(preferenceName,0)
-    var address by androidx.compose.runtime.mutableStateOf(LocalConnection.defaultBase)
+    var address by androidx.compose.runtime.mutableStateOf(LocalConnection.BASE)
         private set
     var stage by androidx.compose.runtime.mutableStateOf(ConnectionStage.ADDRESS)
         private set
@@ -79,7 +79,7 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
         searchOrigin=null
     }
     private fun cancelCurrentPaging() {pagingScope?.takeUnless {it===searchOrigin?.scope}?.cancel()}
-    init {if(preferenceName=="server_connection") {prefs.edit().clear().apply();connect(LocalConnection.defaultBase)}}
+    init {if(preferenceName=="server_connection") {prefs.edit().clear().apply();connect(LocalConnection.BASE)}}
     fun signedOut() {discardSearchOrigin();operation?.cancel();pagingScope?.cancel();pageFlow=null;groups=emptyList();filters=WallFilters();busy=false;error=null;stage=ConnectionStage.LOGIN;server?.imageLoader?.memoryCache?.clear()}
     fun configure() {discardSearchOrigin();operation?.cancel();pagingScope?.cancel();busy=false;stage=ConnectionStage.ADDRESS;error=null;pageFlow=null;server?.imageLoader?.memoryCache?.clear()}
     private fun expired(instance:PhotoTubeServer) {viewModelScope.launch {
