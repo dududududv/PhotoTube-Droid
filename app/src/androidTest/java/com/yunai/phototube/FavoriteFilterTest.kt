@@ -2,6 +2,7 @@ package com.yunai.phototube
 
 import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -16,22 +17,24 @@ class FavoriteFilterTest {
     @get:Rule val rule=createComposeRule()
     @Test fun largeTextShortWindowCanReachClearAndCascade() {
         var latest=WallFilters(keyword="合成搜索",favorite=true)
+        var dismissals=0
         rule.setContent {PhotoTubeTheme {
             val density=androidx.compose.ui.platform.LocalDensity.current
             CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(density.density,2f)) {
-                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.then(androidx.compose.ui.Modifier.size(340.dp,320.dp))) {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(340.dp,320.dp)) {
                     var filters by remember {mutableStateOf(latest)}
                     FilterMenu(rememberLayerBackdrop(),CornerInsets(16.dp,16.dp,16.dp,16.dp),.4f,filters,
-                        onChange={filters=it;latest=it},onDismiss={})
+                        onChange={filters=it;latest=it},onDismiss={dismissals++})
                 }
             }
         }}
-        rule.onNodeWithText("清除筛选").performScrollTo().assertIsDisplayed().performClick()
+        rule.onNodeWithText("清除筛选").performScrollTo().performClick()
         rule.runOnIdle {Assert.assertEquals(WallFilters(keyword="合成搜索"),latest)}
         rule.onNodeWithText("收藏状态").performScrollTo().performClick()
-        rule.onNodeWithText("只看未收藏").performScrollTo().assertIsDisplayed().performClick()
-        rule.runOnIdle {Assert.assertEquals(false,latest.favorite)}
-        rule.onNodeWithText("完成").assertIsDisplayed()
+        rule.onNodeWithText("只看未收藏").performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.runOnIdle {Assert.assertEquals(false,latest.favorite);Assert.assertEquals(1,dismissals)}
+        rule.onNodeWithText("完成").assertDoesNotExist()
     }
     @Test fun threeStatesPreserveTypedBatchScopeAndOtherConditions() {
         val initial=WallFilters(keyword="旅行照",libraryId="library",folderPath="旅行",tagsExclude=setOf(12))
@@ -44,40 +47,34 @@ class FavoriteFilterTest {
         Assert.assertEquals("true",initial.copy(favorite=true).query()["favorite"])
         Assert.assertEquals(initial.query(),unfavorited.copy(favorite=null).query())
     }
-    @Test fun glassCascadeSelectsUnfavoritedAndCanClearIt() {
+    @Test fun choicesDismissWhileToggleAndOutsideKeepSelection() {
         var latest=WallFilters(keyword="旅行照")
         var dismissals=0
         rule.setContent {PhotoTubeTheme {
             var filters by remember {mutableStateOf(latest)}
-            FilterMenu(rememberLayerBackdrop(),CornerInsets(16.dp,16.dp,32.dp,16.dp),.15f,filters,
-                onChange={filters=it;latest=it},onDismiss={dismissals++})
+            var shown by remember {mutableStateOf(true)}
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            if(shown) FilterMenu(rememberLayerBackdrop(),CornerInsets(16.dp,16.dp,32.dp,16.dp),.15f,filters,
+                onChange={filters=it;latest=it},onDismiss={dismissals++;shown=false})
+            else androidx.compose.material3.TextButton({shown=true}) {androidx.compose.material3.Text("打开")}
+            }
         }}
         rule.onNodeWithText("收藏状态").performClick()
         rule.onNodeWithText("只看未收藏").performClick()
-        rule.runOnIdle {Assert.assertEquals(false,latest.favorite)}
+        rule.waitForIdle()
+        rule.runOnIdle {Assert.assertEquals(false,latest.favorite);Assert.assertEquals(1,dismissals)}
+        rule.onNodeWithText("打开").performClick()
         rule.onNodeWithText("收藏状态").performClick()
         rule.onNodeWithText("只看未收藏").assertIsSelected()
-            .assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role,androidx.compose.ui.semantics.Role.RadioButton))
-        rule.onNodeWithText("全部").assertIsNotSelected()
-        rule.onNodeWithText("全部").performClick()
+        rule.onNodeWithText("全部").performClick();rule.waitForIdle()
         rule.runOnIdle {Assert.assertNull(latest.favorite);Assert.assertEquals("旅行照",latest.keyword)}
-        rule.onNodeWithText("收藏状态").performClick()
-        rule.onNodeWithText("只看收藏").performClick()
-        rule.onNodeWithText("清除筛选").performClick()
-        rule.runOnIdle {Assert.assertNull(latest.favorite);Assert.assertEquals("旅行照",latest.keyword)}
-        rule.onNodeWithText("只看归档").assertIsOff()
-            .assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.Role,androidx.compose.ui.semantics.Role.Checkbox))
-        rule.onNodeWithText("只看归档").performClick().assertIsOn()
-        rule.onNodeWithText("媒体类型").performClick()
-        rule.onNodeWithText("照片与视频").assertIsSelected()
-        rule.onNodeWithContentDescription("返回筛选菜单").performClick()
-        rule.mainClock.autoAdvance=false
-        rule.onNodeWithText("完成").performClick()
-        rule.mainClock.advanceTimeByFrame()
-        rule.onNodeWithText("完成").assertIsNotEnabled()
-        Assert.assertEquals(0,dismissals)
-        rule.mainClock.autoAdvance=true
+        rule.onNodeWithText("打开").performClick()
+        rule.onNodeWithText("只看归档").assertIsOff().performClick()
+        rule.runOnIdle {Assert.assertEquals("archive toggle must keep the menu open",2,dismissals);Assert.assertTrue("archive must be applied",latest.archived)}
+        rule.onNodeWithText("只看归档").assertIsOn()
+        rule.onNodeWithTag("filter-menu").assertExists()
+        rule.onNodeWithContentDescription("关闭筛选菜单").performTouchInput {click(androidx.compose.ui.geometry.Offset(5f,center.y))}
         rule.waitForIdle()
-        Assert.assertEquals(1,dismissals)
+        rule.runOnIdle {Assert.assertTrue(latest.archived);Assert.assertEquals(3,dismissals)}
     }
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,7 +46,7 @@ internal enum class FilterPage(val title: String, val advanced: Boolean = false)
     FOLDERS("目录", true), ALL_TAGS("全部包含", true), ANY_TAGS("任一包含", true), EXCLUDE_TAGS("排除标签", true)
 }
 
-/** One source-anchored surface; advanced selections are a draft until Apply. */
+/** Immediate menu selections. Only mutually exclusive choices dismiss the menu. */
 @Composable
 internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float, filters: WallFilters,
     onChange: (WallFilters) -> Unit, onDismiss: () -> Unit, server: PhotoTubeServer? = null) {
@@ -55,7 +56,7 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
     var page by remember { mutableStateOf(FilterPage.ROOT) }
-    var draft by remember { mutableStateOf(filters) }
+    var selection by remember(filters) { mutableStateOf(filters) }
     val catalogRows = remember { mutableStateMapOf<FilterPage, Int>() }
     val density = LocalDensity.current
     val view = LocalView.current
@@ -64,15 +65,15 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
     val keyboardOverlap = with(density) { (windowBottom-(view.height-imeBottom)).coerceAtLeast(0f).toDp() }
     val scale = density.fontScale.coerceAtLeast(1f)
     val rowHeight = 48.dp * scale
-    val headerHeight = 48.dp * scale
+    val headerHeight = if(page==FilterPage.ROOT) 0.dp else 44.dp * scale
     val colors = AppTheme.colors
     val dark = LocalDarkTheme.current
     val glass = LocalGlassAppearance.current
-    val invalid = filterScopeError(draft)
     val catalog = remember(server) { server?.let(::FilterCatalog) }
     fun close() {
         if (closing) return
         closing = true
+        focusManager.clearFocus(); keyboard?.hide()
         scope.launch { expansion.animateTo(0f, spring(1f, 650f)); onDismiss() }
     }
     fun back() {
@@ -94,6 +95,7 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
             FilterPage.MEDIA, FilterPage.FAVORITE -> headerHeight + rowHeight * 3 + 12.dp
             FilterPage.FOLDERS, FilterPage.ALL_TAGS, FilterPage.ANY_TAGS, FilterPage.EXCLUDE_TAGS ->
                 headerHeight + rowHeight * (catalogRows[page] ?: 5) + 20.dp
+            FilterPage.SCOPE -> headerHeight + rowHeight * 7 + 80.dp
             else -> 560.dp * scale
         }
         val menuWidth by animateDpAsState(minOf((if(page.advanced) 336.dp else 264.dp)*scale,
@@ -114,38 +116,41 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
             Icon(Icons.Rounded.FilterList,null,Modifier.align(Alignment.TopEnd).padding(13.dp).size(22.dp)
                 .graphicsLayer { alpha=1f-contentAlpha },tint=colors.text)
             Column(Modifier.requiredWidth(menuWidth).fillMaxHeight().align(Alignment.TopEnd).graphicsLayer {alpha=contentAlpha}) {
-                Row(Modifier.fillMaxWidth().height(headerHeight).padding(horizontal=6.dp),verticalAlignment=Alignment.CenterVertically) {
-                    if(page!=FilterPage.ROOT) Box(Modifier.size(44.dp).clip(RoundedCornerShape(16.dp))
+                if(page!=FilterPage.ROOT) {
+                    Row(Modifier.fillMaxWidth().height(headerHeight)
                         .clickable(enabled=!closing,role=Role.Button,onClick=::back)
-                        .semantics {contentDescription="返回筛选菜单"},contentAlignment=Alignment.Center) { MenuChevron(colors.text,true) }
-                    else Spacer(Modifier.width(12.dp))
-                    Text(page.title,Modifier.weight(1f),fontSize=15.sp,fontWeight=FontWeight.SemiBold,color=colors.text,maxLines=1,overflow=TextOverflow.Ellipsis)
-                    TextButton(onClick={if(page.advanced) onChange(draft);close()},enabled=!closing && (!page.advanced || invalid==null)) {
-                        Text(if(page.advanced) "应用" else "完成",fontSize=15.sp,fontWeight=FontWeight.SemiBold)
+                        .semantics {contentDescription="返回筛选菜单"}
+                        .padding(horizontal=16.dp),verticalAlignment=Alignment.CenterVertically) {
+                        MenuChevron(colors.secondary,true)
+                        Spacer(Modifier.width(8.dp))
+                        Text(page.title,fontSize=14.sp,fontWeight=FontWeight.Medium,color=colors.secondary,maxLines=1,overflow=TextOverflow.Ellipsis)
                     }
+                    FilterSeparator()
                 }
                 AnimatedContent(page,modifier=Modifier.weight(1f),transitionSpec={
                     (fadeIn(tween(140))+slideInHorizontally(spring(1f,600f)){if(targetState.ordinal>initialState.ordinal) it/12 else -it/12}) togetherWith
                         (fadeOut(tween(90))+slideOutHorizontally(tween(140)){if(targetState.ordinal>initialState.ordinal) -it/12 else it/12})
                 },label="filter-submenu") { current ->
-                    if(current.advanced && catalog!=null) FilterScopeContent(current,draft,{draft=it},{page=it},catalog) {catalogRows[current]=it}
-                    else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom=8.dp)
+                    if(current.advanced && catalog!=null) FilterScopeContent(current,selection,{value ->
+                        if(!closing) {selection=value;onChange(value)}
+                    },{page=it},catalog,onClose=::close) {catalogRows[current]=it}
+                    else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical=6.dp)
                         .then(if(current!=FilterPage.ROOT) Modifier.selectableGroup() else Modifier)) {
                         when(current) {
                             FilterPage.MEDIA -> {
-                                MenuChoice("照片与视频",filters.kind==null,!closing,true) {onChange(filters.copy(kind=null));page=FilterPage.ROOT}
-                                WallKind.entries.forEach {kind -> MenuChoice("仅${kind.label}",filters.kind==kind,!closing,true) {onChange(filters.copy(kind=kind));page=FilterPage.ROOT} }
+                                MenuChoice("照片与视频",filters.kind==null,!closing,true) {onChange(filters.copy(kind=null));close()}
+                                WallKind.entries.forEach {kind -> MenuChoice("仅${kind.label}",filters.kind==kind,!closing,true) {onChange(filters.copy(kind=kind));close()} }
                             }
                             FilterPage.FAVORITE -> listOf(null to "全部",true to "只看收藏",false to "只看未收藏").forEach {(value,label) ->
-                                MenuChoice(label,filters.favorite==value,!closing,true) {onChange(filters.copy(favorite=value));page=FilterPage.ROOT}
+                                MenuChoice(label,filters.favorite==value,!closing,true) {onChange(filters.copy(favorite=value));close()}
                             }
                             else -> {
                                 FilterNavigationRow("媒体类型",filters.kind?.label ?: "全部",enabled=!closing) {page=FilterPage.MEDIA}
                                 FilterNavigationRow("收藏状态",when(filters.favorite){true->"已收藏";false->"未收藏";null->"全部"},enabled=!closing) {page=FilterPage.FAVORITE}
-                                MenuChoice("只看归档",filters.archived,!closing,uncheckedLabel="关闭") {onChange(filters.copy(archived=!filters.archived))}
+                                MenuChoice("只看归档",filters.archived,!closing) {onChange(filters.copy(archived=!filters.archived))}
                                 if(catalog!=null) {
                                     FilterSeparator()
-                                    FilterNavigationRow("日期、目录与标签",if(filters.hasScope) "已设置" else "",enabled=!closing) {draft=filters;page=FilterPage.SCOPE}
+                                    FilterNavigationRow("日期、目录与标签",if(filters.hasScope) "已设置" else "",enabled=!closing) {selection=filters;page=FilterPage.SCOPE}
                                 }
                                 if(filters.active) FilterTextAction("清除筛选",enabled=!closing) {onChange(WallFilters(keyword=filters.keyword))}
                             }
@@ -161,6 +166,7 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
 internal fun FilterNavigationRow(title:String,value:String="",enabled:Boolean=true,onClick:()->Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min=48.dp*LocalDensity.current.fontScale.coerceAtLeast(1f))
         .clickable(enabled=enabled,role=Role.Button,onClick=onClick).padding(horizontal=18.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+        Spacer(Modifier.width(24.dp))
         Text(title,Modifier.weight(1f),color=AppTheme.colors.text,fontSize=16.sp)
         if(value.isNotEmpty()) Text(value,Modifier.widthIn(max=130.dp).padding(start=8.dp),color=AppTheme.colors.secondary,fontSize=13.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
         Spacer(Modifier.width(12.dp));MenuChevron(AppTheme.colors.secondary)
@@ -168,20 +174,25 @@ internal fun FilterNavigationRow(title:String,value:String="",enabled:Boolean=tr
 }
 
 @Composable
-internal fun MenuChoice(title:String,checked:Boolean,enabled:Boolean=true,radio:Boolean=false,uncheckedLabel:String?=null,onClick:()->Unit) {
+internal fun MenuChoice(title:String,checked:Boolean,enabled:Boolean=true,radio:Boolean=false,onClick:()->Unit) {
     val colors=AppTheme.colors
     Row(Modifier.fillMaxWidth().heightIn(min=48.dp*LocalDensity.current.fontScale.coerceAtLeast(1f))
         .then(if(radio) Modifier.selectable(checked,enabled=enabled,role=Role.RadioButton,onClick=onClick) else Modifier.toggleable(checked,enabled,Role.Checkbox){onClick()})
         .padding(horizontal=18.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+        Box(Modifier.width(24.dp),contentAlignment=Alignment.CenterStart) {
+            if(checked) Icon(Icons.Outlined.Check,null,Modifier.size(17.dp),tint=colors.text)
+        }
         Text(title,Modifier.weight(1f),color=colors.text.copy(alpha=if(enabled) 1f else .45f),fontSize=16.sp)
-        if(checked) Icon(Icons.Outlined.Check,null,Modifier.padding(start=12.dp).size(20.dp),tint=colors.accent)
-        else if(uncheckedLabel!=null) Text(uncheckedLabel,color=colors.secondary,fontSize=13.sp)
     }
 }
 
 @Composable
 internal fun FilterTextAction(label:String,enabled:Boolean=true,onClick:()->Unit) {
-    TextButton(onClick,Modifier.fillMaxWidth().heightIn(min=48.dp),enabled=enabled) { Text(label,fontSize=15.sp) }
+    Row(Modifier.fillMaxWidth().heightIn(min=48.dp*LocalDensity.current.fontScale.coerceAtLeast(1f))
+        .clickable(enabled=enabled,role=Role.Button,onClick=onClick).padding(horizontal=18.dp,vertical=10.dp)) {
+        Spacer(Modifier.width(24.dp))
+        Text(label,fontSize=15.sp,color=AppTheme.colors.accent.copy(alpha=if(enabled) 1f else .4f))
+    }
 }
 
 @Composable
@@ -189,9 +200,6 @@ internal fun FilterSeparator() { Box(Modifier.padding(horizontal=18.dp).fillMaxW
 
 @Composable
 internal fun MenuChevron(tint:androidx.compose.ui.graphics.Color,back:Boolean=false) {
-    Canvas(Modifier.size(7.dp,11.dp).graphicsLayer {rotationZ=if(back) 180f else 0f}) {
-        val inset=1.dp.toPx()
-        val path=androidx.compose.ui.graphics.Path().apply {moveTo(inset,inset);lineTo(size.width-inset,size.height/2);lineTo(inset,size.height-inset)}
-        drawPath(path,tint,style=androidx.compose.ui.graphics.drawscope.Stroke(width=1.6.dp.toPx(),cap=androidx.compose.ui.graphics.StrokeCap.Round,join=androidx.compose.ui.graphics.StrokeJoin.Round))
-    }
+    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight,null,
+        Modifier.size(18.dp).graphicsLayer {rotationZ=if(back) 180f else 0f},tint=tint)
 }

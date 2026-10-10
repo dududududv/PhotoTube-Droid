@@ -8,6 +8,9 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,31 +37,30 @@ private fun dateLabel(value:String?):String = value?.let {Instant.parse(it).atZo
 
 /** Every picker stays inside FilterMenu's surface; none opens a new window. */
 @Composable
-internal fun FilterScopeContent(page:FilterPage,draft:WallFilters,onDraft:(WallFilters)->Unit,onPage:(FilterPage)->Unit,catalog:FilterCatalog,onCatalogRows:(Int)->Unit) {
+internal fun FilterScopeContent(page:FilterPage,selection:WallFilters,onSelection:(WallFilters)->Unit,onPage:(FilterPage)->Unit,catalog:FilterCatalog,onClose:()->Unit,onCatalogRows:(Int)->Unit) {
     when(page) {
         FilterPage.SCOPE -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("filter-scope")) {
             ScopeLabel("拍摄日期")
-            FilterNavigationRow("开始",dateLabel(draft.takenFrom)) {onPage(FilterPage.FROM)}
-            FilterNavigationRow("结束",dateLabel(draft.takenTo)) {onPage(FilterPage.TO)}
+            FilterNavigationRow("开始",dateLabel(selection.takenFrom)) {onPage(FilterPage.FROM)}
+            FilterNavigationRow("结束",dateLabel(selection.takenTo)) {onPage(FilterPage.TO)}
             FilterSeparator()
-            FilterNavigationRow("目录",draft.folderPath ?: if(draft.libraryId!=null) "整个媒体库" else "全部") {onPage(FilterPage.FOLDERS)}
+            FilterNavigationRow("目录",selection.folderPath ?: if(selection.libraryId!=null) "整个媒体库" else "全部") {onPage(FilterPage.FOLDERS)}
             FilterSeparator();ScopeLabel("标签组合")
-            FilterNavigationRow("全部包含",if(draft.tagsAll.isEmpty()) "不限" else "${draft.tagsAll.size} 个") {onPage(FilterPage.ALL_TAGS)}
-            FilterNavigationRow("任一包含",if(draft.tagsAny.isEmpty()) "不限" else "${draft.tagsAny.size} 个") {onPage(FilterPage.ANY_TAGS)}
-            FilterNavigationRow("排除",if(draft.tagsExclude.isEmpty()) "不限" else "${draft.tagsExclude.size} 个") {onPage(FilterPage.EXCLUDE_TAGS)}
-            filterScopeError(draft)?.let {Text(it,Modifier.padding(horizontal=18.dp),color=AppTheme.colors.destructive,fontSize=13.sp)}
-            FilterTextAction("重置高级条件",draft.hasScope) {onDraft(draft.copy(libraryId=null,folderPath=null,takenFrom=null,takenTo=null,tagsAll=emptySet(),tagsAny=emptySet(),tagsExclude=emptySet()))}
-            ScopeLabel("点应用生效；回到筛选首页或点外部取消修改。")
+            FilterNavigationRow("全部包含",if(selection.tagsAll.isEmpty()) "不限" else "${selection.tagsAll.size} 个") {onPage(FilterPage.ALL_TAGS)}
+            FilterNavigationRow("任一包含",if(selection.tagsAny.isEmpty()) "不限" else "${selection.tagsAny.size} 个") {onPage(FilterPage.ANY_TAGS)}
+            FilterNavigationRow("排除",if(selection.tagsExclude.isEmpty()) "不限" else "${selection.tagsExclude.size} 个") {onPage(FilterPage.EXCLUDE_TAGS)}
+            filterScopeError(selection)?.let {Text(it,Modifier.padding(horizontal=18.dp),color=AppTheme.colors.destructive,fontSize=13.sp)}
+            FilterTextAction("重置高级条件",selection.hasScope) {onSelection(selection.copy(libraryId=null,folderPath=null,takenFrom=null,takenTo=null,tagsAll=emptySet(),tagsAny=emptySet(),tagsExclude=emptySet()))}
         }
         FilterPage.FROM,FilterPage.TO -> key(page) {
-            FilterCalendar(if(page==FilterPage.FROM) draft.takenFrom else draft.takenTo,page==FilterPage.TO) {value ->
-                onDraft(if(page==FilterPage.FROM) draft.copy(takenFrom=value) else draft.copy(takenTo=value));onPage(FilterPage.SCOPE)
+            FilterCalendar(if(page==FilterPage.FROM) selection.takenFrom else selection.takenTo,page==FilterPage.TO,if(page==FilterPage.FROM) selection.takenTo else selection.takenFrom) {value ->
+                onSelection(if(page==FilterPage.FROM) selection.copy(takenFrom=value) else selection.copy(takenTo=value));onPage(FilterPage.SCOPE)
             }
         }
-        FilterPage.FOLDERS -> FilterFolders(catalog,draft,onDraft,onCatalogRows)
+        FilterPage.FOLDERS -> FilterFolders(catalog,selection,{onSelection(it);onClose()},onCatalogRows)
         else -> {
-            val selected=when(page){FilterPage.ALL_TAGS->draft.tagsAll;FilterPage.ANY_TAGS->draft.tagsAny;else->draft.tagsExclude}
-            FilterTags(catalog,selected,onCatalogRows) {ids -> onDraft(when(page){FilterPage.ALL_TAGS->draft.copy(tagsAll=ids);FilterPage.ANY_TAGS->draft.copy(tagsAny=ids);else->draft.copy(tagsExclude=ids)})}
+            val selected=when(page){FilterPage.ALL_TAGS->selection.tagsAll;FilterPage.ANY_TAGS->selection.tagsAny;else->selection.tagsExclude}
+            FilterTags(catalog,selected,onCatalogRows) {ids -> onSelection(when(page){FilterPage.ALL_TAGS->selection.copy(tagsAll=ids);FilterPage.ANY_TAGS->selection.copy(tagsAny=ids);else->selection.copy(tagsExclude=ids)})}
         }
     }
 }
@@ -67,21 +69,26 @@ internal fun FilterScopeContent(page:FilterPage,draft:WallFilters,onDraft:(WallF
 private fun ScopeLabel(text:String) {Text(text,Modifier.padding(horizontal=18.dp,vertical=10.dp),fontSize=13.sp,color=AppTheme.colors.secondary)}
 
 @Composable
-private fun FilterCalendar(value:String?,end:Boolean,onSelect:(String?)->Unit) {
+private fun FilterCalendar(value:String?,end:Boolean,otherBound:String?,onSelect:(String?)->Unit) {
     val initial=remember(value) {value?.let {Instant.parse(it).atZone(ZoneId.systemDefault()).toLocalDate()}}
     var month by remember {mutableStateOf(YearMonth.from(initial ?: LocalDate.now()))}
     var typing by remember {mutableStateOf(false)}
     var input by remember {mutableStateOf(initial?.toString().orEmpty())}
     val parsed=runCatching {LocalDate.parse(input)}.getOrNull()?.takeIf {it.year in 1..9999}
+    fun allowed(day:LocalDate):Boolean {
+        val instant=Instant.parse(filterDayInstant(day,end,ZoneId.systemDefault()))
+        return otherBound==null || if(end) instant>=Instant.parse(otherBound) else instant<=Instant.parse(otherBound)
+    }
+    val valid=parsed!=null && allowed(parsed)
     val colors=AppTheme.colors
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("filter-calendar")) {
         MenuChoice("不限",value==null,radio=true) {onSelect(null)}
         FilterSeparator()
         if(typing) {
             ScopeLabel("年-月-日，例如 2026-09-01")
-            FilterInput(input,{input=it},"输入日期")
+            FilterInput(input,{input=it},"输入日期",onSubmit={if(valid) parsed?.let {onSelect(filterDayInstant(it,end,ZoneId.systemDefault()))}})
             if(input.isNotEmpty() && parsed==null) ScopeLabel("请输入有效日期")
-            FilterTextAction("选择日期",parsed!=null) {parsed?.let {onSelect(filterDayInstant(it,end,ZoneId.systemDefault()))}}
+            if(parsed!=null && !valid) ScopeLabel("结束日期不能早于开始日期")
         } else {
             Row(Modifier.fillMaxWidth().padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("${month.year}年${month.monthValue}月",Modifier.weight(1f).padding(start=10.dp),fontWeight=FontWeight.SemiBold,color=colors.text,fontSize=16.sp)
@@ -102,10 +109,10 @@ private fun FilterCalendar(value:String?,end:Boolean,onSelect:(String?)->Unit) {
                                 val day=month.atDay(dayNumber)
                                 Box(Modifier.weight(1f).height(44.dp).clip(CircleShape)
                                     .background(if(day==initial) colors.selected else androidx.compose.ui.graphics.Color.Transparent)
-                                    .selectable(day==initial,role=Role.RadioButton,onClick={onSelect(filterDayInstant(day,end,ZoneId.systemDefault()))})
+                                    .selectable(day==initial,enabled=allowed(day),role=Role.RadioButton,onClick={onSelect(filterDayInstant(day,end,ZoneId.systemDefault()))})
                                     .semantics {contentDescription="${day.year}年${day.monthValue}月${day.dayOfMonth}日"}
                                     .testTag("filter-day-$day"),contentAlignment=Alignment.Center) {
-                                    Text("$dayNumber",color=if(day==initial) colors.accent else colors.text,fontSize=15.sp,fontWeight=if(day==initial) FontWeight.Bold else FontWeight.Normal)
+                                    Text("$dayNumber",color=if(!allowed(day)) colors.secondary.copy(alpha=.35f) else if(day==initial) colors.accent else colors.text,fontSize=15.sp,fontWeight=if(day==initial) FontWeight.Bold else FontWeight.Normal)
                                 }
                             }
                         }
@@ -124,10 +131,12 @@ private fun CalendarArrow(label:String,enabled:Boolean,back:Boolean,onClick:()->
 }
 
 @Composable
-private fun FilterInput(value:String,onValue:(String)->Unit,label:String) {
+private fun FilterInput(value:String,onValue:(String)->Unit,label:String,onSubmit:(()->Unit)?=null) {
     val colors=AppTheme.colors
     BasicTextField(value,onValue,Modifier.padding(horizontal=18.dp,vertical=8.dp).fillMaxWidth()
         .clip(RoundedCornerShape(12.dp)).background(colors.subtle).padding(12.dp).semantics {contentDescription=label},
+        keyboardOptions=KeyboardOptions(imeAction=if(onSubmit!=null) ImeAction.Done else ImeAction.Search),
+        keyboardActions=KeyboardActions(onDone={onSubmit?.invoke()}),
         singleLine=true,textStyle=TextStyle(color=colors.text,fontSize=16.sp),cursorBrush=SolidColor(colors.accent),
         decorationBox={inner -> Box {if(value.isEmpty()) Text(label,color=colors.secondary,fontSize=16.sp);inner()}})
 }
@@ -156,17 +165,17 @@ private fun FilterTags(catalog:FilterCatalog,selected:Set<Long>,onRows:(Int)->Un
 }
 
 @Composable
-private fun FilterFolders(catalog:FilterCatalog,draft:WallFilters,onDraft:(WallFilters)->Unit,onRows:(Int)->Unit) {
+private fun FilterFolders(catalog:FilterCatalog,selection:WallFilters,onSelection:(WallFilters)->Unit,onRows:(Int)->Unit) {
     var trail by remember {mutableStateOf<List<LibraryFolder>>(emptyList())}
     val current=trail.lastOrNull()
     val flow=remember(catalog,current) {Pager(PagingConfig(100,initialLoadSize=100,enablePlaceholders=false)){AlbumPagingSource {catalog.folders(current?.libraryId,current?.path.orEmpty(),it)}}.flow}
     val folders=flow.collectAsLazyPagingItems()
     LaunchedEffect(folders.itemCount,current,folders.loadState) {onRows(folders.itemCount.coerceIn(1,6)+1+(if(current!=null) 2 else 0))}
     Column(Modifier.fillMaxSize().testTag("filter-folders")) {
-        MenuChoice("全部目录",draft.libraryId==null,radio=true) {onDraft(draft.copy(libraryId=null,folderPath=null))}
+        MenuChoice("全部目录",selection.libraryId==null,radio=true) {onSelection(selection.copy(libraryId=null,folderPath=null))}
         if(current!=null) {
             FilterTextAction("返回上级目录") {trail=trail.dropLast(1)}
-            MenuChoice("使用：${current.name}",draft.libraryId==current.libraryId && draft.folderPath==current.path.ifEmpty {null},current.online,true) {onDraft(draft.copy(libraryId=current.libraryId,folderPath=current.path.ifEmpty {null}))}
+            MenuChoice("使用：${current.name}",selection.libraryId==current.libraryId && selection.folderPath==current.path.ifEmpty {null},current.online,true) {onSelection(selection.copy(libraryId=current.libraryId,folderPath=current.path.ifEmpty {null}))}
         }
         FilterSeparator()
         LazyColumn(Modifier.weight(1f)) {
