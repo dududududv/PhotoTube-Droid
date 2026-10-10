@@ -96,7 +96,7 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
         Box(Modifier.matchParentSize().clickable(interactionSource=null, indication=null, onClick=::close)
             .semantics { contentDescription="关闭筛选菜单" })
         val estimatedHeight = when (page) {
-            FilterPage.ROOT -> headerHeight + rowHeight * (7 + (if(filters.active) 1 else 0) + (if(catalog!=null) 3 else 0)) + 36.dp
+            FilterPage.ROOT -> headerHeight + rowHeight * (5 + (if(filters.active) 1 else 0) + (if(catalog!=null) 3 else 0)) + 28.dp
             FilterPage.FOLDERS, FilterPage.ALL_TAGS, FilterPage.ANY_TAGS, FilterPage.EXCLUDE_TAGS ->
                 headerHeight + rowHeight * (catalogRows[page] ?: 5) + 20.dp
             FilterPage.DATES -> headerHeight + rowHeight * 3 + 12.dp
@@ -154,12 +154,7 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
                             MenuChoice("仅视频",filters.kind==WallKind.VIDEO,!closing,true,MediaSymbol.VIDEO) {onChange(filters.copy(kind=WallKind.VIDEO));close()}
                         }
                         FilterGroupSeparator()
-                        Column(Modifier.selectableGroup()) {
-                            MenuChoice("不限收藏",filters.favorite==null,!closing,true,MediaSymbol.GRID) {onChange(filters.copy(favorite=null));close()}
-                            MenuChoice("只看收藏",filters.favorite==true,!closing,true,MediaSymbol.HEART) {onChange(filters.copy(favorite=true));close()}
-                            MenuChoice("只看未收藏",filters.favorite==false,!closing,true,MediaSymbol.HEART_OFF) {onChange(filters.copy(favorite=false));close()}
-                        }
-                        FilterGroupSeparator()
+                        MenuChoice("只看收藏",filters.favorite==true,!closing,icon=MediaSymbol.HEART) {onChange(filters.copy(favorite=if(filters.favorite==true) null else true))}
                         MenuChoice("只看归档",filters.archived,!closing,icon=MediaSymbol.ARCHIVE) {onChange(filters.copy(archived=!filters.archived))}
                         if(catalog!=null) {
                             FilterGroupSeparator()
