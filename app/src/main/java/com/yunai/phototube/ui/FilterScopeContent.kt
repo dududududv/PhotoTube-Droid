@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.TextStyle
@@ -37,9 +38,9 @@ private fun dateLabel(value:String?):String = value?.let {Instant.parse(it).atZo
 
 /** Every picker stays inside FilterMenu's surface; none opens a new window. */
 @Composable
-internal fun FilterScopeContent(page:FilterPage,selection:WallFilters,onSelection:(WallFilters)->Unit,onPage:(FilterPage)->Unit,catalog:FilterCatalog,onClose:()->Unit,onCatalogRows:(Int)->Unit) {
+internal fun FilterScopeContent(page:FilterPage,selection:WallFilters,onSelection:(WallFilters)->Unit,onPage:(FilterPage)->Unit,catalog:FilterCatalog,onClose:()->Unit,onContentHeight:(Int)->Unit,onCatalogRows:(Int)->Unit) {
     when(page) {
-        FilterPage.SCOPE -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("filter-scope")) {
+        FilterPage.SCOPE -> Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).onSizeChanged {onContentHeight(it.height)}.testTag("filter-scope")) {
             ScopeLabel("拍摄日期")
             FilterNavigationRow("开始",dateLabel(selection.takenFrom)) {onPage(FilterPage.FROM)}
             FilterNavigationRow("结束",dateLabel(selection.takenTo)) {onPage(FilterPage.TO)}
@@ -53,7 +54,7 @@ internal fun FilterScopeContent(page:FilterPage,selection:WallFilters,onSelectio
             FilterTextAction("重置高级条件",selection.hasScope) {onSelection(selection.copy(libraryId=null,folderPath=null,takenFrom=null,takenTo=null,tagsAll=emptySet(),tagsAny=emptySet(),tagsExclude=emptySet()))}
         }
         FilterPage.FROM,FilterPage.TO -> key(page) {
-            FilterCalendar(if(page==FilterPage.FROM) selection.takenFrom else selection.takenTo,page==FilterPage.TO,if(page==FilterPage.FROM) selection.takenTo else selection.takenFrom) {value ->
+            FilterCalendar(if(page==FilterPage.FROM) selection.takenFrom else selection.takenTo,page==FilterPage.TO,if(page==FilterPage.FROM) selection.takenTo else selection.takenFrom,onContentHeight) {value ->
                 onSelection(if(page==FilterPage.FROM) selection.copy(takenFrom=value) else selection.copy(takenTo=value));onPage(FilterPage.SCOPE)
             }
         }
@@ -69,7 +70,7 @@ internal fun FilterScopeContent(page:FilterPage,selection:WallFilters,onSelectio
 private fun ScopeLabel(text:String) {Text(text,Modifier.padding(horizontal=18.dp,vertical=10.dp),fontSize=13.sp,color=AppTheme.colors.secondary)}
 
 @Composable
-private fun FilterCalendar(value:String?,end:Boolean,otherBound:String?,onSelect:(String?)->Unit) {
+private fun FilterCalendar(value:String?,end:Boolean,otherBound:String?,onContentHeight:(Int)->Unit,onSelect:(String?)->Unit) {
     val initial=remember(value) {value?.let {Instant.parse(it).atZone(ZoneId.systemDefault()).toLocalDate()}}
     var month by remember {mutableStateOf(YearMonth.from(initial ?: LocalDate.now()))}
     var typing by remember {mutableStateOf(false)}
@@ -81,7 +82,7 @@ private fun FilterCalendar(value:String?,end:Boolean,otherBound:String?,onSelect
     }
     val valid=parsed!=null && allowed(parsed)
     val colors=AppTheme.colors
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("filter-calendar")) {
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).onSizeChanged {onContentHeight(it.height)}.testTag("filter-calendar")) {
         MenuChoice("不限",value==null,radio=true) {onSelect(null)}
         FilterSeparator()
         if(typing) {

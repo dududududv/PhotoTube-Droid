@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalView
@@ -35,6 +36,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.*
 import com.yunai.phototube.data.*
 import com.yunai.phototube.glass.LocalGlassAppearance
+import com.yunai.phototube.glass.glassHighlight
 import com.yunai.phototube.ui.icons.FilterList
 import com.yunai.phototube.ui.theme.AppTheme
 import com.yunai.phototube.ui.theme.LocalDarkTheme
@@ -58,6 +60,7 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
     var page by remember { mutableStateOf(FilterPage.ROOT) }
     var selection by remember(filters) { mutableStateOf(filters) }
     val catalogRows = remember { mutableStateMapOf<FilterPage, Int>() }
+    val contentHeights = remember(LocalDensity.current) { mutableStateMapOf<FilterPage, Int>() }
     val density = LocalDensity.current
     val view = LocalView.current
     var windowBottom by remember { mutableFloatStateOf(0f) }
@@ -90,15 +93,23 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
         .testTag("filter-menu-overlay")) {
         Box(Modifier.matchParentSize().clickable(interactionSource=null, indication=null, onClick=::close)
             .semantics { contentDescription="关闭筛选菜单" })
-        val requestedHeight = when (page) {
+        val estimatedHeight = when (page) {
             FilterPage.ROOT -> headerHeight + rowHeight * (3 + (if(filters.active) 1 else 0) + (if(catalog!=null) 1 else 0)) + 12.dp
             FilterPage.MEDIA, FilterPage.FAVORITE -> headerHeight + rowHeight * 3 + 12.dp
             FilterPage.FOLDERS, FilterPage.ALL_TAGS, FilterPage.ANY_TAGS, FilterPage.EXCLUDE_TAGS ->
                 headerHeight + rowHeight * (catalogRows[page] ?: 5) + 20.dp
             FilterPage.SCOPE -> headerHeight + rowHeight * 7 + 80.dp
-            else -> 560.dp * scale
+            else -> 464.dp * scale
         }
-        val menuWidth by animateDpAsState(minOf((if(page.advanced) 336.dp else 264.dp)*scale,
+        val requestedHeight = contentHeights[page]?.let { headerHeight + with(density) {it.toDp()} + (if(page==FilterPage.ROOT) 0.dp else .5.dp) } ?: estimatedHeight
+        val preferredWidth = when(page) {
+            FilterPage.FROM, FilterPage.TO -> 328.dp
+            FilterPage.MEDIA, FilterPage.FAVORITE -> 216.dp
+            FilterPage.ROOT -> 232.dp
+            FilterPage.SCOPE -> 252.dp
+            else -> 280.dp
+        }
+        val menuWidth by animateDpAsState(minOf(preferredWidth*scale,
             maxWidth-insets.left-insets.right), spring(1f,550f), label="filter-menu-width")
         val menuHeight by animateDpAsState(minOf(requestedHeight,
             (maxHeight-insets.top-maxOf(insets.bottom,keyboardOverlap)).coerceAtLeast(96.dp)), spring(1f,550f), label="filter-menu-height")
@@ -107,10 +118,10 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
         Box(Modifier.align(Alignment.TopEnd).absolutePadding(right=insets.right,top=insets.top)
             .width(48.dp+(menuWidth-48.dp)*p).height(48.dp+(menuHeight-48.dp)*p)
             .drawBackdrop(backdrop, shape={RoundedCornerShape(24.dp)},
-                effects={vibrancy();blur((glass.blur+10f*p).dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
-                // A reading surface needs more luminance stability than an icon's lens.
-                // Keep the same glass hue and edge optics, materializing its body on expansion.
-                onDrawSurface={drawRect(colors.glass.copy(alpha=opacity+((if(dark) .90f else .88f)-opacity)*p))})
+                effects={vibrancy();blur(glass.blur.dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
+                highlight={glassHighlight(dark)},
+                // Preserve the shared glass optics; a light tint keeps menu text readable.
+                onDrawSurface={drawRect(colors.glass.copy(alpha=opacity+((if(dark) .58f else .68f)-opacity)*p))})
             .clip(RoundedCornerShape(24.dp)).pointerInput(Unit) { detectTapGestures { } }
             .testTag("filter-menu").semantics { paneTitle=page.title }) {
             Icon(Icons.Rounded.FilterList,null,Modifier.align(Alignment.TopEnd).padding(13.dp).size(22.dp)
@@ -133,8 +144,8 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
                 },label="filter-submenu") { current ->
                     if(current.advanced && catalog!=null) FilterScopeContent(current,selection,{value ->
                         if(!closing) {selection=value;onChange(value)}
-                    },{page=it},catalog,onClose=::close) {catalogRows[current]=it}
-                    else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical=6.dp)
+                    },{page=it},catalog,onClose=::close,onContentHeight={contentHeights[current]=it}) {catalogRows[current]=it}
+                    else Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).onSizeChanged {contentHeights[current]=it.height}.padding(vertical=6.dp)
                         .then(if(current!=FilterPage.ROOT) Modifier.selectableGroup() else Modifier)) {
                         when(current) {
                             FilterPage.MEDIA -> {
@@ -165,11 +176,11 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
 @Composable
 internal fun FilterNavigationRow(title:String,value:String="",enabled:Boolean=true,onClick:()->Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min=48.dp*LocalDensity.current.fontScale.coerceAtLeast(1f))
-        .clickable(enabled=enabled,role=Role.Button,onClick=onClick).padding(horizontal=18.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
-        Spacer(Modifier.width(24.dp))
+        .clickable(enabled=enabled,role=Role.Button,onClick=onClick).padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+        Spacer(Modifier.width(20.dp))
         Text(title,Modifier.weight(1f),color=AppTheme.colors.text,fontSize=16.sp)
         if(value.isNotEmpty()) Text(value,Modifier.widthIn(max=130.dp).padding(start=8.dp),color=AppTheme.colors.secondary,fontSize=13.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-        Spacer(Modifier.width(12.dp));MenuChevron(AppTheme.colors.secondary)
+        Spacer(Modifier.width(8.dp));MenuChevron(AppTheme.colors.secondary)
     }
 }
 
@@ -178,8 +189,8 @@ internal fun MenuChoice(title:String,checked:Boolean,enabled:Boolean=true,radio:
     val colors=AppTheme.colors
     Row(Modifier.fillMaxWidth().heightIn(min=48.dp*LocalDensity.current.fontScale.coerceAtLeast(1f))
         .then(if(radio) Modifier.selectable(checked,enabled=enabled,role=Role.RadioButton,onClick=onClick) else Modifier.toggleable(checked,enabled,Role.Checkbox){onClick()})
-        .padding(horizontal=18.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
-        Box(Modifier.width(24.dp),contentAlignment=Alignment.CenterStart) {
+        .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+        Box(Modifier.width(20.dp),contentAlignment=Alignment.CenterStart) {
             if(checked) Icon(Icons.Outlined.Check,null,Modifier.size(17.dp),tint=colors.text)
         }
         Text(title,Modifier.weight(1f),color=colors.text.copy(alpha=if(enabled) 1f else .45f),fontSize=16.sp)
@@ -189,8 +200,8 @@ internal fun MenuChoice(title:String,checked:Boolean,enabled:Boolean=true,radio:
 @Composable
 internal fun FilterTextAction(label:String,enabled:Boolean=true,onClick:()->Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min=48.dp*LocalDensity.current.fontScale.coerceAtLeast(1f))
-        .clickable(enabled=enabled,role=Role.Button,onClick=onClick).padding(horizontal=18.dp,vertical=10.dp)) {
-        Spacer(Modifier.width(24.dp))
+        .clickable(enabled=enabled,role=Role.Button,onClick=onClick).padding(horizontal=16.dp,vertical=10.dp)) {
+        Spacer(Modifier.width(20.dp))
         Text(label,fontSize=15.sp,color=AppTheme.colors.accent.copy(alpha=if(enabled) 1f else .4f))
     }
 }
