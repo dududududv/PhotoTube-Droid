@@ -127,6 +127,33 @@ internal fun RemotePhotoWall(vm:PhotoWallViewModel,topInset:Dp,modifier:Modifier
 @Composable
 private fun ConnectionForm(vm:PhotoWallViewModel) {
     val colors=AppTheme.colors
+    if(vm.address!=LocalMockData.BASE) {
+        var username by remember {mutableStateOf("admin")}
+        var password by remember {mutableStateOf("")}
+        Text("连接本地图库",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=colors.text)
+        Text(vm.address,color=colors.secondary)
+        when(vm.stage) {
+            ConnectionStage.LOGIN -> {
+                com.yunai.phototube.ui.GlassTextField(username,{username=it},"账号",enabled=!vm.busy,
+                    modifier=Modifier.fillMaxWidth().testTag("local-login-username"))
+                com.yunai.phototube.ui.GlassTextField(password,{password=it},"密码",enabled=!vm.busy,
+                    visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType=androidx.compose.ui.text.input.KeyboardType.Password,autoCorrectEnabled=false),
+                    modifier=Modifier.fillMaxWidth().testTag("local-login-password"))
+                com.yunai.phototube.ui.GlassSettingsAction(if(vm.busy) "正在登录…" else "登录",{
+                    vm.login(username.trim(),password);password=""
+                },enabled=!vm.busy && username.isNotBlank() && password.isNotEmpty(),
+                    modifier=Modifier.testTag("local-login-submit"))
+            }
+            ConnectionStage.INITIALIZE -> Text("请先在本地服务中初始化账号，再重新连接。",color=colors.secondary)
+            else -> Unit
+        }
+        if(vm.stage!=ConnectionStage.LOGIN) com.yunai.phototube.ui.GlassSettingsAction(
+            if(vm.busy) "正在连接…" else "重新连接",{vm.connect(LocalConnection.defaultBase)},enabled=!vm.busy)
+        vm.error?.let {Failure(it,null)}
+        return
+    }
     Text("本地示例图库",fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=colors.text)
     Text("仅使用本地 mock 数据与随包示例素材，无需服务器地址或账号。",color=colors.secondary)
     com.yunai.phototube.ui.GlassSettingsAction(
@@ -141,7 +168,7 @@ private fun Loading(label:String) {Row(Modifier.fillMaxWidth().padding(24.dp),ho
 @Composable
 private fun Failure(error:Throwable?,retry:(()->Unit)?) {
     Column(Modifier.fillMaxWidth().padding(16.dp).testTag("server-error")) {
-        Text(when(error) {is ServerError->error.message;is java.io.IOException->"本地示例加载失败，请重试";else->error?.message ?: "加载失败"},color=AppTheme.colors.text)
+        Text(when(error) {is ServerError->error.message;is java.io.IOException->if(LocalConnection.enabled) "无法连接本地服务，请确认服务已启动且模拟器端口转发已配置。" else "本地示例加载失败，请重试";else->error?.message ?: "加载失败"},color=AppTheme.colors.text)
         (error as? ServerError)?.logId?.let {androidx.compose.foundation.text.selection.SelectionContainer {Text("日志编号：$it",color=AppTheme.colors.secondary,fontSize=12.sp)}}
         if(retry!=null) com.yunai.phototube.ui.GlassSettingsAction("重试",retry)
     }

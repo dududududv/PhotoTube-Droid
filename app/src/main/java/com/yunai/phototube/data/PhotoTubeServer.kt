@@ -48,21 +48,21 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
         fun normalize(address:String):String {
             val url=address.trim().toHttpUrl()
             require(url.username.isEmpty() && url.password.isEmpty() && url.query==null && url.fragment==null && url.encodedPath=="/") {"请填写服务根地址，不要包含 /api/v1、账号或查询参数"}
-            require(url.host in setOf("mock.phototube.invalid","localhost","127.0.0.1","::1")) {"项目仅允许本地 mock，禁止连接真实服务"}
+            require(url.host in setOf("mock.phototube.invalid","localhost","127.0.0.1","::1")) {"仅允许本地联调或隔离测试地址"}
             return url.toString().trimEnd('/')
         }
     }
     val base=normalize(address)
     val origin="$base/".toHttpUrl()
     val privateMedia get()=privateAllowed!=null
-    init { require(origin.host=="mock.phototube.invalid" || transport!=null) {"本地测试服务必须由隔离测试显式注入"} }
+    init { require(LocalConnection.allowsTransport(origin, transport!=null)) {"此构建未启用该本地联调地址"} }
     private val mock=LocalMockData(context)
     val cookies=sessionCookies ?: SessionCookieJar(context,origin)
     val client=(transport?.newBuilder() ?: OkHttpClient.Builder()).cookieJar(cookies).proxy(java.net.Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
         .addInterceptor { chain ->
             val request=chain.request()
-            check(request.url.host==origin.host && request.url.port==origin.port) { "禁止跨来源请求" }
-            check(origin.host=="mock.phototube.invalid" || transport!=null && origin.host in setOf("localhost","127.0.0.1","::1")) { "禁止访问真实网络" }
+            check(request.url.scheme==origin.scheme && request.url.host==origin.host && request.url.port==origin.port) { "禁止跨来源请求" }
+            check(LocalConnection.allowsTransport(origin, transport!=null)) { "禁止访问未授权服务" }
             chain.proceed(request)
         }
         .dns { host ->

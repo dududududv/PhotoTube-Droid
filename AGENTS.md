@@ -1,5 +1,9 @@
 # Mandatory local-mock-only boundary
 
+## Explicit local integration exception — 2026-10-10
+
+The user now explicitly authorizes the local development API at `http://127.0.0.1:18474/api/v1` and the supplied local development account. Debug builds may opt in with `phototube.localIntegration=true`. On the authorized `emulator-5560`, use `adb reverse tcp:18474 tcp:18474`. This exception supersedes the mock-only requirement only for this exact local origin; NAS, LAN, production, remote AI and former real sessions remain prohibited. Never commit the supplied credentials or session data. Keep local integration sessions isolated from mock and former production storage. Run synthetic instrumentation with `-Pphototube.localIntegration=false`.
+
 The user explicitly prohibits access to NAS and all private data.
 
 - Only local synthetic/mock data and bundled sample media may be used in development, UI review, tests, screenshots and demos.
