@@ -119,9 +119,9 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
         Box(Modifier.align(Alignment.TopEnd).absolutePadding(right=insets.right,top=insets.top)
             .width(48.dp+(menuWidth-48.dp)*p).height(48.dp+(menuHeight-48.dp)*p)
             .drawBackdrop(backdrop, shape={RoundedCornerShape(24.dp)},
-                effects={vibrancy();blur(glass.blur.dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
+                effects={vibrancy();blur((glass.blur+4f).dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
                 highlight={glassHighlight(dark)},
-                // Match the collapsed search button's shared blur and surface opacity.
+                // Match the active tab's blur while retaining the shared surface opacity.
                 onDrawSurface={drawRect(colors.glass.copy(alpha=opacity))})
             .clip(RoundedCornerShape(24.dp)).pointerInput(Unit) { detectTapGestures { } }
             .testTag("filter-menu").semantics { paneTitle=page.title }) {
