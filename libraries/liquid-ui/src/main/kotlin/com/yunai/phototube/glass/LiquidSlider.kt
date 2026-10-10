@@ -22,6 +22,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
@@ -59,7 +60,8 @@ fun LiquidSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     visibilityThreshold: Float,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     val palette = LocalGlassPalette.current
     val accentColor = palette.accent
@@ -70,11 +72,13 @@ fun LiquidSlider(
     BoxWithConstraints(
         modifier.fillMaxWidth().semantics {
             progressBarRangeInfo = ProgressBarRangeInfo(value(), valueRange)
-            setProgress { onValueChange(it.coerceIn(valueRange)); true }
+            if (!enabled) disabled()
+            setProgress { if (enabled) { onValueChange(it.coerceIn(valueRange)); true } else false }
         },
         contentAlignment = Alignment.CenterStart
     ) {
         val trackWidth = constraints.maxWidth
+        val currentEnabled by rememberUpdatedState(enabled)
         val currentValue by rememberUpdatedState(value)
         val currentOnChange by rememberUpdatedState(onValueChange)
         val currentWidth by rememberUpdatedState(trackWidth)
@@ -90,13 +94,20 @@ fun LiquidSlider(
                 visibilityThreshold = visibilityThreshold,
                 initialScale = 1f,
                 pressedScale = 1.5f,
-                onDragStarted = {},
+                onDragStarted = { didDrag = false },
                 onDragStopped = {
-                    if (didDrag) {
+                    if (didDrag && currentEnabled) {
                         currentOnChange(targetValue)
                     }
                 },
+                onDragCancelled = {
+                    // Dragging publishes live values. Cancellation keeps the latest
+                    // accepted value and must not issue a second commit callback.
+                    didDrag = false
+                    updateValue(currentValue())
+                },
                 onDrag = { _, dragAmount ->
+                    if (!currentEnabled || dragAmount.x == 0f) return@DampedDragAnimation
                     if (!didDrag) {
                         didDrag = dragAmount.x != 0f
                     }
@@ -122,7 +133,8 @@ fun LiquidSlider(
                 Modifier
                     .clip(Capsule())
                     .background(trackColor)
-                    .pointerInput(animationScope) {
+                    .pointerInput(animationScope, enabled) {
+                        if (!enabled) return@pointerInput
                         detectTapGestures { position ->
                             val delta = (valueRange.endInclusive - valueRange.start) * (position.x / trackWidth)
                             val targetValue =
@@ -160,7 +172,7 @@ fun LiquidSlider(
                             .fastCoerceIn(-size.width / 4f, trackWidth - size.width * 3f / 4f) * if (isLtr) 1f else -1f
                 }
                 .testTag("liquid-slider-thumb")
-                .then(dampedDragAnimation.modifier)
+                .then(if (enabled) dampedDragAnimation.modifier else Modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(
                         backdrop,

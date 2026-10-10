@@ -17,7 +17,9 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Encrypted at rest, exact-origin scoped, never logged or exposed to UI. */
 internal class SessionCookieJar(context:Context,private val origin:HttpUrl):CookieJar {
-    private val prefs=context.getSharedPreferences("server_session",Context.MODE_PRIVATE)
+    init { PhotoTubeServer.normalize(origin.toString()) }
+    // Never restore a former real-account session, including in test activities.
+    private val prefs=context.getSharedPreferences("server_session_mock",Context.MODE_PRIVATE)
     private val storageKey=java.security.MessageDigest.getInstance("SHA-256").digest(origin.toString().toByteArray()).joinToString(""){"%02x".format(it)}
     private fun key():SecretKey {
         val store=KeyStore.getInstance("AndroidKeyStore").apply {load(null)}

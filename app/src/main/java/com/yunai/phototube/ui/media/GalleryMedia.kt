@@ -23,7 +23,11 @@ import kotlinx.coroutines.withContext
 
 @Immutable
 internal data class Photo(val id: Int, val name: String, val date: String, val favorite: Boolean = false, val video: Boolean = false, val remote:RemoteMedia? = null) {
-    val takenOn: java.time.LocalDate = java.time.LocalDate.parse(date, java.time.format.DateTimeFormatter.ofPattern("yyyy年M月d日"))
+    // Remote identity comes from the API timestamp, never from localized display text.
+    val takenOn: java.time.LocalDate = remote?.asset?.let { asset ->
+        val zone = asset.takenAtOffsetMinutes?.let { java.time.ZoneOffset.ofTotalSeconds(it * 60) } ?: java.time.ZoneId.systemDefault()
+        java.time.OffsetDateTime.parse(asset.takenAt).atZoneSameInstant(zone).toLocalDate()
+    } ?: java.time.LocalDate.parse(date, java.time.format.DateTimeFormatter.ofPattern("yyyy年M月d日"))
 }
 internal val photos = listOf(
     Photo(R.drawable.lake, "山间来信", "2026年9月7日", true),
@@ -126,7 +130,7 @@ internal fun mediaCount(media:List<Photo>):String {
 
 /** The opening rectangle changes only drawing, never image measurement or decoding. */
 @Composable
-internal fun MediaTransitionArtwork(photo:Photo,source:androidx.compose.ui.geometry.Rect?,progress:()->Float,exiting:Boolean=false) {
+internal fun MediaTransitionArtwork(photo:Photo,source:androidx.compose.ui.geometry.Rect?,progress:()->Float,exiting:Boolean=false,sourceCornerRadius:androidx.compose.ui.unit.Dp) {
     val context=LocalContext.current.applicationContext
     val bitmap=if(photo.remote!=null) rememberRemotePoster(photo.remote) else if(photo.video) rememberMediaMetadata(photo)?.poster else {
         val loaded by key(photo.id) {
@@ -149,13 +153,18 @@ internal fun MediaTransitionArtwork(photo:Photo,source:androidx.compose.ui.geome
         // Hand back to the actual tile (including its caption and corner mask)
         // before removing the dialog, rather than popping an opaque overlay off.
         val opacity=if(exiting) {
-            if(destination==null) p else (p/.18f).coerceIn(0f,1f)
+            if(destination==null) p else (p/SourceHandoffFraction).coerceIn(0f,1f)
         } else 1f
-        val frame=androidx.compose.ui.geometry.lerp(origin,target,p)
+        // Finish moving before the source becomes visible: both layers must have
+        // identical geometry during the cross-window opacity handoff.
+        val geometryProgress = if (exiting && destination != null)
+            ((p - SourceHandoffFraction) / (1f - SourceHandoffFraction)).coerceIn(0f, 1f)
+        else p
+        val frame=androidx.compose.ui.geometry.lerp(origin,target,geometryProgress)
         val cropWidth=minOf(image.width.toFloat(),image.height*frame.width/frame.height)
         val cropHeight=minOf(image.height.toFloat(),image.width*frame.height/frame.width)
         val path=androidx.compose.ui.graphics.Path().apply {
-            addRoundRect(androidx.compose.ui.geometry.RoundRect(frame,androidx.compose.ui.geometry.CornerRadius((if(photo.remote!=null) 12f else 22f)*density*(1f-p))))
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(frame,androidx.compose.ui.geometry.CornerRadius(sourceCornerRadius.toPx()*(1f-geometryProgress))))
         }
         clipPath(path) {
             drawImage(image,alpha=opacity,

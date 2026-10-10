@@ -9,6 +9,11 @@ import com.yunai.phototube.ui.PhotoTubeApp
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Purge only local remnants; never contact an old account or server.
+        getSharedPreferences("server_connection",MODE_PRIVATE).edit().clear().commit()
+        getSharedPreferences("server_session",MODE_PRIVATE).edit().clear().commit()
+        cacheDir.deleteRecursively()
+        externalCacheDir?.deleteRecursively()
         enableEdgeToEdge()
         setContent { PhotoTubeApp() }
     }

@@ -1,44 +1,41 @@
 # PhotoTube-Droid
 
-原生 Android / Jetpack Compose 相册：支持深浅色的便当盒照片布局，底部可随滚动收缩的胶囊 Tab 与正圆搜索按钮，使用 AndroidLiquidGlass 本地源码实现液态玻璃和手势动效。
+原生 Android / Jetpack Compose 相册，使用 AndroidLiquidGlass 本地源码实现玻璃控件、胶囊导航和手势动效。
 
-## 真实后端接入
+## 当前开发边界
 
-首页照片墙已接入服务连接、应用内登录、按月分组、游标分页与缩略图加载。默认服务为 `http://192.168.6.56:18473`；首页支持媒体类型、收藏与归档筛选，搜索暂未接入真实接口；远程详情已复用原查看器接入原图及视频播放。相册及其他模块仍是本地界面预览。调用流程、功能边界和验收记录见 [照片墙开发说明](docs/development/photo-wall/README.md)。
+**仅限本地 Mock。** 应用使用进程内 `LocalMockData` 与随包示例媒体；禁止访问 NAS、真实服务、私有媒体及旧账号会话。请求层拒绝外部来源，测试只允许显式注入的本地隔离夹具。具体约束见 [AGENTS.md](AGENTS.md) 与 [本地 Mock 说明](docs/development/local-mock-only.md)。旧文档中的真实服务地址和操作说明均不再适用，不得执行。
 
-## 已有界面预览
+## 当前界面
 
-- 图库首页、按月分组的照片与视频；右上角筛选。统一详情支持翻页、缩放、缩略图导航、玻璃工具栏、信息与系统分享。
-- 独立相册页面、方形封面；点击进入相册网格详情，支持排序和缩略图大小切换。
-- 右下角按当前页面搜索照片或相册，各自保存关键词与滚动位置。
-- 底部上滑从 60dp 收缩至 48dp，下滑恢复，保留玻璃拖动动效。
-- 筛选浮层与独立设置页；设置采用 iOS 风格分组，复用上游玻璃按钮、开关、滑块，包含图库偏好、触感、玻璃深浅和视频预览。
-- 外观子页：跟随系统／浅色／深色、四种主题色和玻璃参数；通过统一语义主题注入所有页面与玻璃组件，并持久化设置。
-- 预览模块保留 6 张离线示例照片和 1 段本地视频；真实首页不使用演示数据兜底，无设备相册读取权限。
-- 相册 → 设置 → 视频预览：本地视频循环播放，TextureView 实时玻璃采样，可拖动玻璃、暂停与恢复。
+- 图库：按月展示照片与视频，筛选、搜索、选择和批量操作。
+- 相册：首页展示相册封面与图内标题，加号与设置共用玻璃胶囊；不按“文件夹 / 智能相册”添加首页分类。
+- 资料库管理入口位于相册右上角设置中。
+- 详情：图片缩放、连续浏览、视频横向 seek、封面展开与返回过渡。
+- 底部图库/相册胶囊与搜索按钮随纵向滚动收缩。
+- 外观：系统/浅色/深色、主题色及玻璃参数，通过全局语义主题统一注入。
 
-## 开发
+数据访问与管理模块保留已有代码，但当前运行和验证均受 Mock 边界限制。代码存在不表示对应真实服务流程已通过验收；产品功能范围以用户当前确认内容为准。
 
-使用 Android Studio 同步工程，运行 `app`。最低 Android 16（API 36），targetSdk 保持 36。compileSdk 37 用于匹配上游 Compose 依赖；沿用 Gradle 9.5.0 / AGP 9.3.2。
+## 本地构建与验证
+
+依赖已缓存时可离线编译：
 
 ```sh
-JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :app:assembleDebug :app:lintDebug
-# 启动 API 36+ 模拟器后
-JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :app:connectedDebugAndroidTest
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew --offline :app:assembleDebug :app:assembleDebugAndroidTest
 ```
 
-APK：`app/build/outputs/apk/debug/app-debug.apk`。
+目前只授权 `emulator-5560`（`PhotoTube_Mock_Audit`）。不得连接其他模拟器或真机，也不得启动可恢复真实账号会话的旧安装应用。构建产物仅用于授权模拟器验证，用户未要求时不交付 APK。
+
+最近验证覆盖相册入口、详情返回、新建草稿、搜索位置恢复、深浅色及设置管理导航；尚未对全部历史 UI 用例重新回归。截图、录屏和测试日志保留本地，不纳入 Git。
 
 ## 源码结构
 
-- `app/src/main/java/com/yunai/phototube/ui/PhotoTubeApp.kt`：界面与本地演示状态。
-- `libraries/liquid-ui/`：可直接修改的四类玻璃组件，基于上游 demo。
-- `libraries/backdrop/`：Android 构建适配器，直接引用 vendored 库源码。
-- `third_party/AndroidLiquidGlass/`：上游源码与 demo 快照，保留 Apache-2.0 许可证。
-- `docs/design/`：选定设计稿、模拟器截图、素材来源与动效接入说明。
+- `app/src/main/java/com/yunai/phototube/ui/`：主界面、查看器、管理界面、全局主题。
+- `app/src/main/java/com/yunai/phototube/data/`：数据模型、Repository、本地 Mock 与请求边界。
+- `app/src/test/`、`app/src/androidTest/`：单元测试、合成夹具与隔离 UI 测试。
+- `libraries/liquid-ui/`：基于上游 demo 的玻璃控件。
+- `libraries/backdrop/`：Android 构建适配。
+- `third_party/AndroidLiquidGlass/`：上游源码快照，保留 Apache-2.0 许可证。
 
-详见 [液态玻璃接入说明](docs/design/liquid-glass.md)。
-
-全局颜色与组件开发约定见 [主题规范](docs/design/theme/README.md)。
-
-详情交互与播放器生命周期见 [媒体查看器说明](docs/design/media-viewer/README.md)。
+后续每完成一块可验证改动，及时提交并推送；不使用强制推送覆盖远端。

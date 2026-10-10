@@ -6,16 +6,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -24,6 +24,7 @@ import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
 import com.yunai.phototube.glass.InteractiveHighlight
+import com.kyant.backdrop.shadow.Shadow
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -45,9 +46,12 @@ fun LiquidButton(
     surfaceColor: Color = Color.Unspecified,
     shape: Shape = Capsule(),
     horizontalPadding: Dp = 16.dp,
+    enabled: Boolean = true,
+    verticalPadding: Dp = 0.dp,
     content: @Composable RowScope.() -> Unit
 ) {
     val appearance = LocalGlassAppearance.current
+    val dark = LocalGlassPalette.current.isDark
     val animationScope = rememberCoroutineScope()
 
     val interactiveHighlight = remember(animationScope) {
@@ -66,7 +70,11 @@ fun LiquidButton(
                     blur(appearance.blur.dp.toPx())
                     lens(appearance.refractionHeight.dp.toPx(), appearance.refractionAmount.dp.toPx(), chromaticAberration = appearance.dispersion)
                 },
-                layerBlock = if (isInteractive) {
+                // Source-over preserves a fine optical edge on light surfaces; additive
+                // highlights overexpose it into a solid white outline.
+                highlight = { glassHighlight(dark) },
+                shadow = { Shadow(radius = 8.dp, color = Color.Black.copy(alpha = if (dark) .16f else .055f)) },
+                layerBlock = if (isInteractive && enabled) {
                     {
                         val width = size.width
                         val height = size.height
@@ -105,13 +113,14 @@ fun LiquidButton(
                 }
             )
             .clickable(
+                enabled = enabled,
                 interactionSource = null,
                 indication = if (isInteractive) null else LocalIndication.current,
                 role = Role.Button,
                 onClick = onClick
             )
             .then(
-                if (isInteractive) {
+                if (isInteractive && enabled) {
                     Modifier
                         .then(interactiveHighlight.modifier)
                         .then(interactiveHighlight.gestureModifier)
@@ -119,8 +128,8 @@ fun LiquidButton(
                     Modifier
                 }
             )
-            .height(48f.dp)
-            .padding(horizontal = horizontalPadding),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         horizontalArrangement = Arrangement.spacedBy(8f.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
         content = content

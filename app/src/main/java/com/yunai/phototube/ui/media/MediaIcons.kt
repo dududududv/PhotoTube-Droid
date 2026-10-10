@@ -16,7 +16,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.unit.dp
 import com.yunai.phototube.ui.theme.MediaColors
 
-internal enum class MediaSymbol { BACK, MORE, SHARE, HEART, INFO, TRASH, PLAY, PAUSE, SOUND, MUTED, GRID }
+internal enum class MediaSymbol { BACK, MORE, SHARE, HEART, INFO, TRASH, PLAY, PAUSE, SOUND, MUTED, GRID, EDIT }
 @Composable
 internal fun MediaIcon(symbol: MediaSymbol, tint: Color = MediaColors.text, filled: Boolean = false) {
     Canvas(Modifier.size(23.dp)) {
@@ -24,6 +24,12 @@ internal fun MediaIcon(symbol: MediaSymbol, tint: Color = MediaColors.text, fill
             fun line(a: Offset, b: Offset) = drawLine(tint, a, b, 1.7f, StrokeCap.Round)
             fun path(points: List<Offset>) { drawPath(Path().apply { moveTo(points[0].x,points[0].y); points.drop(1).forEach { lineTo(it.x,it.y) } }, tint, style = Stroke(1.7f, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
             when(symbol) {
+                MediaSymbol.EDIT -> {
+                    listOf(6f to 8f,12f to 16f,18f to 10f).forEach {(y,x) ->
+                        line(Offset(3f,y),Offset(x-3f,y));line(Offset(x+3f,y),Offset(21f,y))
+                        drawCircle(tint,2.5f,Offset(x,y),style=Stroke(1.7f))
+                    }
+                }
                 MediaSymbol.BACK -> path(listOf(Offset(15f,4f),Offset(7f,12f),Offset(15f,20f)))
                 MediaSymbol.MORE -> listOf(5f,12f,19f).forEach { drawCircle(tint,1.5f,Offset(it,12f)) }
                 MediaSymbol.SHARE -> {

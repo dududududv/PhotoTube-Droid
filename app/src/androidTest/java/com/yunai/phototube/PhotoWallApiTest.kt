@@ -27,9 +27,9 @@ class PhotoWallApiTest {
         val certificate=HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
         val serverTLS=HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTLS=HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
-        host=MockWebServer().apply {useHttps(serverTLS.sslSocketFactory(),false);start()}
+        host=MockWebServer().apply {useHttps(serverTLS.sslSocketFactory(),false);start(java.net.InetAddress.getLoopbackAddress(),0)}
         transport=OkHttpClient.Builder().sslSocketFactory(clientTLS.sslSocketFactory(),clientTLS.trustManager).build()
-        api=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,host.url("/").toString(),{expired.incrementAndGet()},transport)
+        api=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,host.url("/").newBuilder().host("localhost").build().toString(),{expired.incrementAndGet()},transport)
         api.cookies.clear()
     }
     @After fun teardown() {api.cookies.clear();api.dispose();host.shutdown()}
@@ -38,7 +38,7 @@ class PhotoWallApiTest {
         .put("takenAt","2026-09-01T00:00:00Z").put("takenAtOffsetMinutes",JSONObject.NULL).put("fileName","image.jpg")
         .put("contentHash",JSONObject.NULL).put("width",JSONObject.NULL).put("height",JSONObject.NULL).put("favorite",false)
     @Test fun healthAndSharedEncryptedSession()=runBlocking {
-        host.enqueue(json("""{"status":"ok","database":{"reachable":true},"aiWorker":null,"xmpExport":{"available":false}}"""))
+        host.enqueue(json("""{"status":"ok","database":{"reachable":true,"migrationVersion":1},"xmpExport":{"available":false}}"""))
         api.health();Assert.assertEquals("/api/v1/health",host.takeRequest().path)
         host.enqueue(MockResponse().setResponseCode(204).setHeader("Set-Cookie","phototube_session=test-only-token; Path=/; HttpOnly; Max-Age=3600; Secure"))
         api.login("fixture-user","fixture-password");Assert.assertEquals("POST",host.takeRequest().method)
@@ -50,6 +50,17 @@ class PhotoWallApiTest {
         Assert.assertTrue(restored.loadForRequest(api.origin.newBuilder().port(api.origin.port+1).build()).isEmpty())
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         Assert.assertFalse(context.getSharedPreferences("server_session",0).all.values.any {it.toString().contains("test-only-token")})
+    }
+    @Test fun currentHealthContractKeepsDatabaseAndShapeChecks()=runBlocking {
+        host.enqueue(json("""{"status":"degraded","database":{"reachable":false,"migrationVersion":null},"xmpExport":{"available":false}}"""))
+        val offline=runCatching {api.health()}.exceptionOrNull()
+        Assert.assertTrue(offline is ServerError)
+        Assert.assertEquals("DATABASE_OFFLINE",(offline as ServerError).code)
+        host.takeRequest()
+        host.enqueue(json("""{"status":"ok","database":{"reachable":true,"migrationVersion":1}}"""))
+        Assert.assertTrue(runCatching {api.health()}.exceptionOrNull() is IllegalArgumentException)
+        host.takeRequest()
+        Assert.assertEquals(2,host.requestCount)
     }
     @Test fun cursorPaginationIsOpaqueAndNullEndsList()=runBlocking {
         val token="opaque+/=cursor"
@@ -74,6 +85,39 @@ class PhotoWallApiTest {
         Assert.assertEquals("RATE_LIMITED",(error.throwable as ServerError).code)
         Assert.assertEquals(2,host.requestCount)
     }
+    @Test fun refreshRetainsOpaqueCursorAfterEarlierPagesAreEvicted()=runBlocking {
+        val source=AssetPagingSource(api)
+        val firstKey=AssetCursor(null)
+        val middleKey=AssetCursor("opaque-middle+/=",firstKey)
+        val lastKey=AssetCursor("opaque-last+/=",middleKey)
+        host.enqueue(json(JSONObject().put("items",JSONArray().put(asset())).put("nextCursor",lastKey.token).toString()))
+        val middleResult=source.load(PagingSource.LoadParams.Refresh(middleKey,100,false))
+        if(middleResult is PagingSource.LoadResult.Error) throw middleResult.throwable
+        val middle=middleResult as PagingSource.LoadResult.Page
+        host.takeRequest()
+        fun key(page:PagingSource.LoadResult.Page<AssetCursor,RemoteAsset>)=source.getRefreshKey(
+            androidx.paging.PagingState(listOf(page),0,androidx.paging.PagingConfig(100,enablePlaceholders=false),0))
+        Assert.assertEquals(middleKey.token,key(middle)?.token)
+        host.enqueue(json(JSONObject().put("items",JSONArray().put(asset())).put("nextCursor",JSONObject.NULL).toString()))
+        val last=source.load(PagingSource.LoadParams.Append(middle.nextKey!!,100,false)) as PagingSource.LoadResult.Page
+        host.takeRequest()
+        // Only the final page remains; neither a first page nor a next cursor exists.
+        Assert.assertNull(last.nextKey)
+        Assert.assertEquals(lastKey.token,key(last)?.token)
+        host.enqueue(json(JSONObject().put("items",JSONArray().put(asset())).put("nextCursor",JSONObject.NULL).toString()))
+        Assert.assertTrue(source.load(PagingSource.LoadParams.Refresh(key(last),100,false)) is PagingSource.LoadResult.Page)
+        Assert.assertEquals(lastKey.token,host.takeRequest().requestUrl!!.queryParameter("cursor"))
+    }
+    @Test fun invalidRefreshCursorFallsBackOnceWithoutInvalidationLoop()=runBlocking {
+        host.enqueue(json("""{"code":"INVALID_CURSOR","message":"synthetic expired cursor"}""",400))
+        host.enqueue(json(JSONObject().put("items",JSONArray().put(asset())).put("nextCursor",JSONObject.NULL).toString()))
+        val source=AssetPagingSource(api)
+        val result=source.load(PagingSource.LoadParams.Refresh(AssetCursor("expired-fixture"),100,false))
+        Assert.assertTrue(result is PagingSource.LoadResult.Page)
+        Assert.assertEquals("expired-fixture",host.takeRequest().requestUrl!!.queryParameter("cursor"))
+        Assert.assertNull(host.takeRequest().requestUrl!!.queryParameter("cursor"))
+        Assert.assertEquals(2,host.requestCount)
+    }
     @Test fun unauthorizedExpiresButBadPasswordDoesNot()=runBlocking {
         host.enqueue(json("""{"code":"INVALID_CREDENTIALS","message":"口令不正确"}""",401))
         try {api.login("fixture","wrong");Assert.fail()} catch(_:ServerError) {}
@@ -81,6 +125,17 @@ class PhotoWallApiTest {
         host.enqueue(json("""{"code":"UNAUTHORIZED","message":"请登录"}""",401))
         try {api.assets(null);Assert.fail()} catch(_:ServerError) {}
         Assert.assertEquals(1,expired.get())
+    }
+    @Test fun originalOnlyFormatsDoNotAdvertiseServerThumbnails() {
+        val media=RemoteAsset("formats","PHOTO","BROWSABLE","2026-09-01T00:00:00Z",null,"image.jpg","hash",640,480,false,null)
+        for(extension in listOf("avif","bmp","tif","tiff","dng","cr2","cr3","nef","arw","raf")) {
+            Assert.assertNull(extension,api.thumbnail(media.copy(fileName="image.${extension.uppercase(java.util.Locale.ROOT)}")))
+        }
+        for(extension in listOf("jpg","jpeg","png","gif","webp")) {
+            Assert.assertNotNull(extension,api.thumbnail(media.copy(fileName="image.$extension")))
+        }
+        Assert.assertNotNull(api.thumbnail(media.copy(kind="VIDEO",fileName="movie.mkv")))
+        Assert.assertEquals(0,host.requestCount)
     }
     @Test fun thumbnailIsVersionedAndPendingRetryIsBounded() {
         val media=RemoteAsset("abc","PHOTO","BROWSABLE","2026-09-01T00:00:00Z",null,"image.jpg","version hash",640,480,false,null)
@@ -93,7 +148,11 @@ class PhotoWallApiTest {
         Assert.assertEquals("MD",request.queryParameter("size"))
     }
     @Test fun filtersMatchSummaryAndEveryCursorPage()=runBlocking {
-        val filters=WallFilters(WallKind.VIDEO,favoritesOnly=true,archived=true)
+        for(favorite in listOf(true,false,null)) {
+        val filters=WallFilters(WallKind.VIDEO,favorite=favorite,archived=true,keyword="假期 & 100%.jpg",
+            libraryId="10000000-0000-0000-0000-000000000010",folderPath="旅行/海边 & 山",
+            takenFrom="2026-01-01T00:00:00+08:00",takenTo="2026-09-17T23:59:59.999999999+08:00",
+            tagsAll=setOf(9007199254740993L),tagsAny=setOf(3L,2L),tagsExclude=setOf(4L))
         host.enqueue(json("""{"granularity":"MONTH","groups":[]}"""))
         api.summary(filters)
         val summary=host.takeRequest().requestUrl!!
@@ -109,6 +168,8 @@ class PhotoWallApiTest {
         }
         Assert.assertEquals("filtered-cursor",next.queryParameter("cursor"))
         Assert.assertNull(list.queryParameter("sort"))
+        Assert.assertEquals(favorite?.toString(),list.queryParameter("favorite"))
+        }
         Assert.assertFalse(WallFilters().query().containsKey("favorite"))
         Assert.assertFalse(WallFilters().query().containsKey("kind"))
     }

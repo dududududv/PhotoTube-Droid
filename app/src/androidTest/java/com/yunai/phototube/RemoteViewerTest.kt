@@ -23,9 +23,15 @@ class RemoteViewerTest {
         val cert=HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
         val tls=HandshakeCertificates.Builder().heldCertificate(cert).build()
         val trust=HandshakeCertificates.Builder().addTrustedCertificate(cert.certificate).build()
-        val client=OkHttpClient.Builder().sslSocketFactory(trust.sslSocketFactory(),trust.trustManager).build()
+        val client=OkHttpClient.Builder().sslSocketFactory(trust.sslSocketFactory(),trust.trustManager)
+            .addInterceptor { chain ->
+                check(chain.request().url.host == "localhost")
+                // Allow explicit loopback fixtures on the offline audit emulator.
+                chain.proceed(chain.request().newBuilder().removeHeader("Cache-Control").build())
+            }.build()
         val png=ByteArrayOutputStream().apply {Bitmap.createBitmap(48,32,Bitmap.Config.ARGB_8888).apply {eraseColor(android.graphics.Color.BLUE)}.compress(Bitmap.CompressFormat.PNG,100,this)}.toByteArray()
         val video=context.resources.openRawResource(R.raw.glass_video).use {it.readBytes()}
+        val favoriteWrites=AtomicInteger();val archiveWrites=AtomicInteger();val trashWrites=AtomicInteger();
         val ranges=AtomicInteger();val originals=AtomicInteger();val videos=AtomicInteger();val unauthorized=AtomicInteger()
         val host=MockWebServer().apply {
             useHttps(tls.sslSocketFactory(),false)
@@ -34,6 +40,15 @@ class RemoteViewerTest {
                     if(request.getHeader("Cookie")!="phototube_session=viewer-fixture") {unauthorized.incrementAndGet();return MockResponse().setResponseCode(401)}
                     val path=request.requestUrl!!.encodedPath
                     return when {
+                        path=="/api/v1/assets/favorite" || path=="/api/v1/assets/archive" || path=="/api/v1/assets/trash" -> {
+                            val body=org.json.JSONObject(request.body.readUtf8())
+                            Assert.assertEquals("POST",request.method)
+                            val id=body.getJSONArray("assetIds").getString(0)
+                            when { path.endsWith("favorite") -> {Assert.assertTrue(body.getBoolean("favorite"));favoriteWrites.incrementAndGet()}
+                                path.endsWith("archive") -> {Assert.assertTrue(body.getBoolean("archived"));archiveWrites.incrementAndGet()}
+                                else -> trashWrites.incrementAndGet() }
+                            MockResponse().setHeader("Content-Type","application/json").setBody(org.json.JSONObject().put("succeeded",org.json.JSONArray().put(id)).put("failed",org.json.JSONArray()).toString())
+                        }
                         path.endsWith("/thumbnail") -> MockResponse().setHeader("Content-Type","image/png").setBody(Buffer().write(png))
                         path=="/api/v1/assets/photo/original" -> {originals.incrementAndGet();MockResponse().setHeader("Content-Type","image/png").setBody(Buffer().write(png))}
                         path=="/api/v1/assets/video/original" -> {
@@ -47,9 +62,9 @@ class RemoteViewerTest {
                     }
                 }
             }
-            start()
+            start(java.net.InetAddress.getLoopbackAddress(),0)
         }
-        val api=PhotoTubeServer(context,host.url("/").toString(),{},client)
+        val api=PhotoTubeServer(context,host.url("/").newBuilder().host("localhost").build().toString(),{},client)
         api.cookies.saveFromResponse(api.origin,listOf(Cookie.Builder().name("phototube_session").value("viewer-fixture").hostOnlyDomain("localhost").path("/").secure().build()))
         fun photo(id:String,index:Int)=Photo(index,"$id.${if(id=="video") "mp4" else "png"}","2026年9月11日",video=id=="video",remote=RemoteMedia(RemoteAsset(id,if(id=="video") "VIDEO" else "PHOTO","BROWSABLE","2026-09-11T00:00:00Z",0,id,"hash",48,32,false,5.0),api))
         var closed=false
@@ -57,6 +72,12 @@ class RemoteViewerTest {
             val media=listOf(photo("photo",-1),photo("video",-2))
             rule.setContent {PhotoTubeTheme {MediaViewer(ViewerRequest(media,-1,emptyMap()),emptySet(),{},{},{closed=true})}}
             rule.waitUntil(15000) {originals.get()>0}
+            rule.onNodeWithContentDescription("收藏").performClick()
+            rule.waitUntil(10000) {rule.onAllNodesWithContentDescription("取消收藏").fetchSemanticsNodes().isNotEmpty()}
+            Assert.assertEquals(1,favoriteWrites.get())
+            rule.onNodeWithContentDescription("更多操作").performClick()
+            rule.onNodeWithText("归档").performClick()
+            rule.waitUntil(10000) {archiveWrites.get()==1}
             rule.onNodeWithContentDescription("照片与视频信息").performClick()
             rule.onNodeWithTag("media-info").assertIsDisplayed()
             rule.onNodeWithText("fixture/image.png").assertExists()
@@ -73,10 +94,24 @@ class RemoteViewerTest {
                 Assert.assertEquals(16,dataSource.read(bytes,0,16))
                 Assert.assertArrayEquals(video.copyOfRange(100,116),bytes)
             } finally {dataSource.close()}
+            val invalidRange=androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(api.client).createDataSource()
+            try {
+                val failure=runCatching {
+                    invalidRange.open(androidx.media3.datasource.DataSpec.Builder().setUri(api.original("video")).setPosition(video.size.toLong()+1L).build())
+                }.exceptionOrNull()
+                Assert.assertTrue(failure is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)
+                Assert.assertEquals(416,(failure as androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException).responseCode)
+            } finally {invalidRange.close()}
             Assert.assertTrue(ranges.get()>0)
             Assert.assertEquals(0,unauthorized.get())
-            rule.onNodeWithContentDescription("关闭视频详情").performClick()
-            rule.waitUntil(5000) {closed}
+            rule.onNodeWithContentDescription("删除").performClick()
+            rule.onNodeWithText("移入回收站后可以恢复，NAS 原文件会保留。").assertExists()
+            rule.onNodeWithText("删除").performClick()
+            rule.waitUntil(5000) {trashWrites.get()==1}
+            rule.waitForIdle()
+            rule.waitUntil(5000) {closed || rule.onAllNodesWithText("操作未完成").fetchSemanticsNodes().isNotEmpty()}
+            if(!closed) throw AssertionError(rule.onAllNodes(isRoot()).printToString(maxDepth=12))
+            Assert.assertEquals(1,trashWrites.get())
         } finally {api.cookies.clear();api.dispose();host.shutdown()}
     }
 }

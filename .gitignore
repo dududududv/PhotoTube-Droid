@@ -12,3 +12,12 @@ local.properties
 third_party/AndroidLiquidGlass/androidApp/release/
 third_party/AndroidLiquidGlass/.idea/
 third_party/AndroidLiquidGlass/**/xcuserdata/
+
+# Removed legacy review evidence must not be reintroduced.
+docs/development/ui-review-20261008/
+docs/development/backend-parity/screenshots/
+
+# Local UI review evidence (screenshots, recordings, logs and generated reports).
+docs/development/mock-ui-audit-20261008/
+docs/development/mock-ux-review-20261010/
+/design-qa.md

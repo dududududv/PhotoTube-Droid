@@ -54,7 +54,10 @@ dependencies {
     implementation("androidx.paging:paging-compose:3.5.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("io.coil-kt.coil3:coil-compose:3.6.0")
+    implementation("io.coil-kt.coil3:coil-gif:3.6.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.0")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:5.3.0")
 }
 dependencies { androidTestImplementation("com.squareup.okhttp3:okhttp-tls:5.3.0") }
+
+dependencies { testImplementation("junit:junit:4.13.2") }

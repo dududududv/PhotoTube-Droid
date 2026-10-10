@@ -19,7 +19,7 @@ import kotlin.math.abs
 @Composable
 internal fun PhotoGestures(
     photo: Photo, enabled: Boolean, onTap: () -> Unit,
-    onZoomed: (Boolean) -> Unit, onDrag: (Float) -> Unit, onRelease: (Float) -> Unit
+    onLongPress:(()->Unit)?=null,onZoomed: (Boolean) -> Unit, onDrag: (Float) -> Unit, onRelease: (Float) -> Unit
 ) {
     var zoom by remember(photo.id) { mutableFloatStateOf(1f) }
     var pan by remember(photo.id) { mutableStateOf(Offset.Zero) }
@@ -29,6 +29,7 @@ internal fun PhotoGestures(
     val renderedPan = if(touching) pan else animatedPan
     val scale = if(touching) zoom else animatedZoom
     val metadata = rememberMediaMetadata(photo)
+    val currentLongPress by rememberUpdatedState(onLongPress)
     val currentTap by rememberUpdatedState(onTap)
     val currentDrag by rememberUpdatedState(onDrag)
     val currentRelease by rememberUpdatedState(onRelease)
@@ -47,9 +48,9 @@ internal fun PhotoGestures(
         customActions = listOf(CustomAccessibilityAction(if(zoom > 1f) "还原大小" else "放大照片") {
             zoom = if(zoom > 1f) 1f else 2.5f; pan = Offset.Zero; true
         })
-    }.pointerInput(photo.id, enabled) {
+    }.pointerInput(photo.id, enabled,onLongPress!=null) {
         if(!enabled) return@pointerInput
-        detectTapGestures(onTap = { currentTap() }, onDoubleTap = { point ->
+        detectTapGestures(onLongPress=if(onLongPress!=null) {{if(zoom<=1.01f) currentLongPress?.invoke()}} else null,onTap = { currentTap() }, onDoubleTap = { point ->
             zoom = if(zoom > 1.01f) 1f else 2.5f
             pan = if(zoom == 1f) Offset.Zero else clampPan((Offset(size.width/2f,size.height/2f)-point)*(zoom-1f),zoom,size.width.toFloat(),size.height.toFloat())
         })

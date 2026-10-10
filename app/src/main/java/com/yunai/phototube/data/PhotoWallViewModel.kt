@@ -29,7 +29,7 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
     preferenceName:String="server_connection"
 ):AndroidViewModel(application) {
     private val prefs=application.getSharedPreferences(preferenceName,0)
-    var address by androidx.compose.runtime.mutableStateOf(prefs.getString("base_url",null) ?: "http://192.168.6.56:18473")
+    var address by androidx.compose.runtime.mutableStateOf(LocalMockData.BASE)
         private set
     var stage by androidx.compose.runtime.mutableStateOf(ConnectionStage.ADDRESS)
         private set
@@ -47,13 +47,47 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
         private set
     private var operation:Job?=null
     private var pagingScope:CoroutineScope?=null
-    init {if(prefs.contains("base_url")) connect(address)}
-    fun configure() {operation?.cancel();pagingScope?.cancel();busy=false;stage=ConnectionStage.ADDRESS;error=null;pageFlow=null;server?.imageLoader?.memoryCache?.clear()}
+    private class PagingSession(var summary:List<MonthGroup>) { var source:AssetPagingSource?=null }
+    private var pagingSession:PagingSession?=null
+    private data class SearchOrigin(val filters:WallFilters,val groups:List<MonthGroup>,
+        val flow:Flow<PagingData<WallEntry>>,val scope:CoroutineScope,val session:PagingSession?)
+    private var searchOrigin:SearchOrigin?=null
+
+    /** Keep one bounded window while the search route owns a different query. */
+    fun beginSearch() {
+        if(searchOrigin!=null || stage!=ConnectionStage.READY || busy) return
+        val flow=pageFlow ?: return
+        val scope=pagingScope ?: return
+        searchOrigin=SearchOrigin(filters,groups,flow,scope,pagingSession)
+    }
+    fun endSearch() {
+        val origin=searchOrigin
+        searchOrigin=null
+        if(origin!=null && origin.scope.isActive && stage==ConnectionStage.READY &&
+            filters.copy(keyword=origin.filters.keyword)==origin.filters) {
+            operation?.cancel()
+            pagingScope?.takeUnless {it===origin.scope}?.cancel()
+            pagingScope=origin.scope;pagingSession=origin.session;filters=origin.filters;groups=origin.groups;pageFlow=origin.flow
+            busy=false;error=null
+        } else {
+            origin?.scope?.takeUnless {it===pagingScope}?.cancel()
+            updateFilters(filters.copy(keyword=""))
+        }
+    }
+    private fun discardSearchOrigin() {
+        searchOrigin?.scope?.takeUnless {it===pagingScope}?.cancel()
+        searchOrigin=null
+    }
+    private fun cancelCurrentPaging() {pagingScope?.takeUnless {it===searchOrigin?.scope}?.cancel()}
+    init {if(preferenceName=="server_connection") {prefs.edit().clear().apply();connect(LocalMockData.BASE)}}
+    fun signedOut() {discardSearchOrigin();operation?.cancel();pagingScope?.cancel();pageFlow=null;groups=emptyList();filters=WallFilters();busy=false;error=null;stage=ConnectionStage.LOGIN;server?.imageLoader?.memoryCache?.clear()}
+    fun configure() {discardSearchOrigin();operation?.cancel();pagingScope?.cancel();busy=false;stage=ConnectionStage.ADDRESS;error=null;pageFlow=null;server?.imageLoader?.memoryCache?.clear()}
     private fun expired(instance:PhotoTubeServer) {viewModelScope.launch {
-        if(server===instance) {pagingScope?.cancel();pageFlow=null;groups=emptyList();instance.imageLoader.memoryCache?.clear();stage=ConnectionStage.LOGIN;error=ServerError("UNAUTHORIZED","登录已过期，请重新登录")}
+        if(server===instance) {discardSearchOrigin();pagingScope?.cancel();pageFlow=null;groups=emptyList();instance.imageLoader.memoryCache?.clear();stage=ConnectionStage.LOGIN;error=ServerError("UNAUTHORIZED","登录已过期，请重新登录")}
     }}
     fun connect(value:String) {
         if(busy) return
+        discardSearchOrigin()
         operation=viewModelScope.launch {
             busy=true;error=null;stage=ConnectionStage.CONNECTING
             var candidate:PhotoTubeServer?=null
@@ -91,39 +125,56 @@ internal class PhotoWallViewModel @JvmOverloads constructor(
     }
     fun updateFilters(value:WallFilters) {
         if(value==filters) return
+        searchOrigin?.let { if(value.copy(keyword=it.filters.keyword)!=it.filters) discardSearchOrigin() }
         filters=value
         if(stage!=ConnectionStage.READY) return
         operation?.cancel()
-        pagingScope?.cancel()
+        cancelCurrentPaging()
         pageFlow=null;groups=emptyList();error=null;busy=false
-        refresh()
+        reload()
     }
     fun refresh() {
+        discardSearchOrigin()
+        reload(preservePosition=true)
+    }
+    private fun reload(preservePosition:Boolean=false) {
         if(busy) return
         val api=server ?: return
         operation=viewModelScope.launch {
             busy=true;error=null
-            try {loadWall(api)} catch(cancel:CancellationException) {throw cancel} catch(problem:Exception) {error=problem} finally {if(currentCoroutineContext().isActive) busy=false}
+            try {loadWall(api,preservePosition)} catch(cancel:CancellationException) {throw cancel} catch(problem:Exception) {error=problem} finally {if(currentCoroutineContext().isActive) busy=false}
         }
     }
-    private suspend fun loadWall(api:PhotoTubeServer) {
+    private suspend fun loadWall(api:PhotoTubeServer,preservePosition:Boolean=false) {
         stage=ConnectionStage.READY
         val selected=filters
         val summary=api.summary(selected)
         currentCoroutineContext().ensureActive()
         if(selected!=filters) return
-        pagingScope?.cancel()
+        if(preservePosition && pageFlow!=null && pagingScope?.isActive==true) {
+            pagingSession?.let {session ->
+                groups=summary
+                session.summary=summary
+                session.source?.invalidate()
+                return
+            }
+        }
+        cancelCurrentPaging()
+        val session=PagingSession(summary)
+        pagingSession=session
         val scope=CoroutineScope(viewModelScope.coroutineContext+SupervisorJob(viewModelScope.coroutineContext[Job]))
         pagingScope=scope
         groups=summary
-        pageFlow=Pager(PagingConfig(pageSize=100,initialLoadSize=100,prefetchDistance=16,enablePlaceholders=false,maxSize=500)) {AssetPagingSource(api,selected)}
-            .flow.map {data -> data.map<RemoteAsset,WallEntry> {WallEntry.Asset(it)}.insertSeparators {before,after ->
+        pageFlow=Pager(PagingConfig(pageSize=100,initialLoadSize=100,prefetchDistance=16,enablePlaceholders=false,maxSize=500)) {AssetPagingSource(api,selected).also {session.source=it}}
+            .flow.map {data ->
+                val generationSummary=session.summary
+                data.map<RemoteAsset,WallEntry> {WallEntry.Asset(it)}.insertSeparators {before,after ->
                 val next=(after as? WallEntry.Asset)?.value ?: return@insertSeparators null
-                val key=monthKey(next,summary)
+                val key=monthKey(next,generationSummary)
                 val previous=(before as? WallEntry.Asset)?.value
-                if(previous==null || monthKey(previous,summary)!=key) WallEntry.Month(key,summary.firstOrNull {it.key==key}?.count ?: 0,next.id) else null
+                if(previous==null || monthKey(previous,generationSummary)!=key) WallEntry.Month(key,generationSummary.firstOrNull {it.key==key}?.count ?: 0,next.id) else null
             } }.cachedIn(scope)
         stage=ConnectionStage.READY
     }
-    override fun onCleared() {server?.dispose()}
+    override fun onCleared() {discardSearchOrigin();pagingScope?.cancel();server?.dispose()}
 }

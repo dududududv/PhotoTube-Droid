@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -47,8 +48,12 @@ internal fun SettingsScreen(
     favoritesOnly: Boolean, onFavorites: (Boolean) -> Unit,
     newestFirst: Boolean, onNewestFirst: (Boolean) -> Unit,
     glassStrength: Float, onGlassStrength: (Float) -> Unit,
-    onAppearance: (GlassAppearance) -> Unit, onVideo: () -> Unit, onClose: () -> Unit, onServer: (() -> Unit)? = null
+    onAppearance: (GlassAppearance) -> Unit, onVideo: () -> Unit, onClose: () -> Unit, onServer: (() -> Unit)? = null, onRemoteSettings: (() -> Unit)? = null,
+    onLibraryTool: ((com.yunai.phototube.ui.remote.LibraryTool) -> Unit)? = null
 ) {
+    val playbackContext = androidx.compose.ui.platform.LocalContext.current
+    val playbackPreferences = remember(playbackContext) { com.yunai.phototube.data.PlaybackPreferences(playbackContext) }
+    var autoPlay by remember { mutableStateOf(playbackPreferences.autoPlay) }
     var appearanceOpen by rememberSaveable { mutableStateOf(false) }
     Dialog(onDismissRequest = { if (appearanceOpen) appearanceOpen = false else onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         ThemeSystemBars()
@@ -69,27 +74,21 @@ internal fun SettingsScreen(
                     Text("PhotoTube", color = AppTheme.colors.secondary, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp, bottom = 28.dp))
                 }
                 if(onServer!=null) item {
-                    SectionLabel("服务器")
+                    SectionLabel("本地演示")
                     SettingsGroup {
                         Row(Modifier.fillMaxWidth().clickable(onClick=onServer).padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                            Text("服务器连接",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
+                            Text("重新载入 Mock 数据",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
                             Icon(Icons.Outlined.KeyboardArrowRight,null,tint=AppTheme.colors.secondary)
+                        }
+                        if(onRemoteSettings!=null) {
+                            InsetDivider()
+                            Row(Modifier.fillMaxWidth().clickable(onClick=onRemoteSettings).padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Text("服务状态与 AI 配置",color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
+                                Icon(Icons.Outlined.KeyboardArrowRight,null,tint=AppTheme.colors.secondary)
+                            }
                         }
                     }
                     Spacer(Modifier.height(20.dp))
-                }
-                item {
-                    SectionLabel("图库")
-                    SettingsGroup { backdrop ->
-                        ToggleRow("只看收藏", SettingsSymbol.FAVORITES, favoritesOnly, onFavorites, backdrop)
-                        InsetDivider()
-                        Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
-                            SettingsGlyph(SettingsSymbol.CALENDAR)
-                            Text("拍摄时间",color=AppTheme.colors.text,modifier=Modifier.weight(1f).padding(start=12.dp))
-                            Text("最新在前",color=AppTheme.colors.secondary)
-                        }
-                    }
-                    GroupFooter("选择图库显示的内容和照片排列顺序。")
                 }
                 item {
                     SectionLabel("浏览体验")
@@ -112,14 +111,30 @@ internal fun SettingsScreen(
                 }
                 item {
                     SectionLabel("视频")
-                    SettingsGroup {
+                    SettingsGroup { backdrop ->
+                        ToggleRow("打开视频时自动播放", SettingsSymbol.VIDEO, autoPlay, { autoPlay=it; playbackPreferences.autoPlay=it }, backdrop)
+                        InsetDivider()
                         Row(Modifier.fillMaxWidth().clickable(onClick = onVideo).padding(16.dp).heightIn(min = 28.dp), verticalAlignment = Alignment.CenterVertically) {
                             SettingsGlyph(SettingsSymbol.VIDEO)
                             Text("视频预览", color = AppTheme.colors.text, fontSize = 17.sp, modifier = Modifier.weight(1f).padding(start = 12.dp))
                             Icon(Icons.Outlined.KeyboardArrowRight, null, tint = AppTheme.colors.secondary, modifier = Modifier.size(22.dp))
                         }
                     }
-                    GroupFooter("播放一段短片，查看玻璃在动态画面上的效果。")
+                    GroupFooter("音量和静音选择保存在本机，切换视频和重新打开应用后沿用。")
+                }
+                if(onLibraryTool!=null) item {
+                    SectionLabel("资料库管理")
+                    SettingsGroup {
+                        com.yunai.phototube.ui.remote.LibraryTool.entries.forEachIndexed {index,tool ->
+                            if(index>0) InsetDivider()
+                            Row(Modifier.fillMaxWidth().clickable {onLibraryTool(tool)}.padding(16.dp),
+                                verticalAlignment=Alignment.CenterVertically) {
+                                Text(tool.title,color=AppTheme.colors.text,fontSize=17.sp,modifier=Modifier.weight(1f))
+                                Icon(Icons.Outlined.KeyboardArrowRight,null,tint=AppTheme.colors.secondary)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(20.dp))
                 }
                 item {
                     SettingsGroup {
@@ -134,13 +149,21 @@ internal fun SettingsScreen(
                     Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                 }
             }
-            Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 4.dp).height(48.dp)) {
+            // Fade a navigation backing in with the compact title so scrolled rows
+            // cannot draw their labels and glyphs through the toolbar.
+            val headerColor=AppTheme.colors.groupedBackground.copy(alpha=titleAlpha)
+            val navigationScene=rememberLayerBackdrop()
+            Box(Modifier.fillMaxWidth().testTag("settings-toolbar")) {
+                Box(Modifier.matchParentSize().layerBackdrop(navigationScene)
+                    .background(Brush.verticalGradient(0f to headerColor,.85f to headerColor,1f to headerColor.copy(alpha=0f))))
+                Box(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 4.dp).height(48.dp)) {
                 Text("设置", color = AppTheme.colors.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.align(Alignment.Center).graphicsLayer { alpha = titleAlpha })
-                LiquidButton(onClose, scene, Modifier.size(44.dp).align(Alignment.CenterStart).semantics { contentDescription = "返回相册" },
+                    modifier = Modifier.align(Alignment.Center).testTag("settings-toolbar-title").graphicsLayer { alpha = titleAlpha })
+                LiquidButton(onClose, navigationScene, Modifier.size(44.dp).align(Alignment.CenterStart).semantics { contentDescription = "返回相册" },
                     shape = CircleShape, horizontalPadding = 0.dp, surfaceColor = AppTheme.colors.group.copy(.55f)) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = AppTheme.colors.text, modifier = Modifier.size(22.dp))
                 }
+            }
             }
         }
     }

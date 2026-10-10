@@ -48,7 +48,6 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.Capsule
@@ -124,6 +123,14 @@ fun LiquidBottomTabs(
                         )
                     }
                 },
+                onDragCancelled = {
+                    // Cancellation has no selection intent. Restore the last committed
+                    // page rather than rounding the interrupted drag into a new tab.
+                    animateToValue(currentIndex.toFloat())
+                    animationScope.launch {
+                        offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
+                    }
+                },
                 onDrag = { _, dragAmount ->
                     updateValue(
                         (targetValue + dragAmount.x / currentTabWidth * if (isLtr) 1f else -1f)
@@ -177,6 +184,7 @@ fun LiquidBottomTabs(
                         blur(appearance.blur.dp.toPx())
                         lens(appearance.refractionHeight.dp.toPx(), appearance.refractionAmount.dp.toPx(), chromaticAberration = appearance.dispersion)
                     },
+                    highlight = { glassHighlight(palette.isDark) },
                     layerBlock = {
                         val progress = dampedDragAnimation.pressProgress
                         val scale = lerp(1f, 1f + 16f.dp.toPx() / size.width, progress)
@@ -217,17 +225,27 @@ fun LiquidBottomTabs(
                             // Unlike the demo, keep the base refraction when released:
                             // this captured row replaces the surface beneath the selection.
                             lens(appearance.refractionHeight.dp.toPx(), appearance.refractionAmount.dp.toPx(), chromaticAberration = appearance.dispersion)
+                            // Refract only the background, before the label row is drawn.
+                            // Applying this to the composite duplicates and bends glyphs.
+                            val progress = dampedDragAnimation.pressProgress
+                            if (progress > 0f) lens(
+                                (10f * progress * appearance.refractionHeight / 12f).dp.toPx(),
+                                (14f * progress * appearance.refractionAmount / 24f).dp.toPx(),
+                                chromaticAberration = appearance.dispersion
+                            )
                         },
                         highlight = {
                             val progress = dampedDragAnimation.pressProgress
-                            Highlight.Default.copy(alpha = progress)
+                            glassHighlight(palette.isDark, progress)
                         },
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight.modifier)
-                    .height(barHeight - 8.dp)
+                    // Match the outer row's optical coordinates. Only the selection
+                    // viewport is inset; shrinking this source shifts its refracting rim.
+                    .height(barHeight)
                     .fillMaxWidth()
-                    .padding(horizontal = 4f.dp)
+                    .padding(4f.dp)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
                 verticalAlignment = Alignment.CenterVertically,
                 content = content
@@ -247,18 +265,12 @@ fun LiquidBottomTabs(
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { Capsule() },
-                    effects = {
-                        val progress = dampedDragAnimation.pressProgress
-                        lens(
-                            // Keep a shallow lens at rest; pressing adds the demo depth.
-                            (lerp(4f, 10f, progress) * appearance.refractionHeight / 12f).dp.toPx(),
-                            (lerp(6f, 14f, progress) * appearance.refractionAmount / 24f).dp.toPx(),
-                            chromaticAberration = appearance.dispersion
-                        )
-                    },
+                    // The source already supplies the optical treatment. Keep text
+                    // compositing free of blur/refraction even during a pressed drag.
+                    effects = {},
                     highlight = {
                         val progress = dampedDragAnimation.pressProgress
-                        Highlight.Default.copy(alpha = lerp(0.25f, 1f, progress))
+                        glassHighlight(palette.isDark, lerp(0.25f, 1f, progress))
                     },
                     shadow = {
                         val progress = dampedDragAnimation.pressProgress

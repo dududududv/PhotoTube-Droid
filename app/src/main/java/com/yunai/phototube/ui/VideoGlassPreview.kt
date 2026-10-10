@@ -1,6 +1,8 @@
 package com.yunai.phototube.ui
 
 import com.yunai.phototube.ui.theme.*
+import com.yunai.phototube.ui.media.mediaGlass
+import com.kyant.backdrop.Backdrop
 import android.view.LayoutInflater
 import android.view.TextureView
 import androidx.compose.foundation.background
@@ -106,11 +108,11 @@ internal fun VideoGlassPreview(surfaceOpacity: Float = .4f, onClose: () -> Unit)
             }
             Row(Modifier.statusBarsPadding().padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 LiquidButton(onClose, scene, Modifier.size(48.dp).semantics { contentDescription = "关闭视频" },
-                    shape = CircleShape, horizontalPadding = 0.dp, surfaceColor = MediaColors.background.copy(surfaceOpacity * .625f)) {
+                    shape = CircleShape, horizontalPadding = 0.dp, surfaceColor = MediaColors.background.copy(alpha=MediaColors.readableScrimAlpha)) {
                     Icon(Icons.Outlined.Close, null, tint = MediaColors.text)
                 }
                 Spacer(Modifier.width(12.dp))
-                Text("城市片段", color = MediaColors.text, fontSize = 20.sp)
+                VideoPreviewLabel("城市片段",scene,Modifier.testTag("video-preview-title"),20.sp)
             }
             Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(top = 72.dp, bottom = 96.dp)
                 .onSizeChanged { areaSize = it }) {
@@ -127,21 +129,29 @@ internal fun VideoGlassPreview(surfaceOpacity: Float = .4f, onClose: () -> Unit)
                             }
                         },
                     isInteractive = false, surfaceColor = MediaColors.text.copy(surfaceOpacity * .2f)) {
-                    Text("拖动看看", color = MediaColors.text, fontSize = 16.sp)
+                    VideoPreviewLabel("拖动看看",scene)
                 }
             }
             Column(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (!ready || error != null) Text(error ?: "正在加载视频…", color = MediaColors.text)
+                if (!ready || error != null) VideoPreviewLabel(error ?: "正在加载视频…",scene,Modifier.padding(bottom=8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     LiquidButton({ wantsPlay = !wantsPlay; player.playWhenReady = wantsPlay }, scene,
-                        Modifier.width(132.dp).height(64.dp).testTag("video-play"), surfaceColor = MediaColors.background.copy(surfaceOpacity * .625f)) {
+                        Modifier.width(132.dp).height(64.dp).testTag("video-play"), surfaceColor = MediaColors.background.copy(alpha=MediaColors.readableScrimAlpha)) {
                         Text(if (playing) "暂停" else "播放", color = MediaColors.text)
                     }
-                    LiquidButton({ player.seekTo(0) }, scene, Modifier.width(132.dp).height(64.dp), surfaceColor = MediaColors.background.copy(surfaceOpacity * .625f)) {
+                    LiquidButton({ player.seekTo(0) }, scene, Modifier.width(132.dp).height(64.dp), surfaceColor = MediaColors.background.copy(alpha=MediaColors.readableScrimAlpha)) {
                         Text("重新播放", color = MediaColors.text)
                     }
                 }
             }
         }
     }
+}
+
+
+/** Keep instructional text readable while the surrounding demo lens remains clear. */
+@Composable
+internal fun VideoPreviewLabel(text:String,scene:Backdrop,modifier:Modifier=Modifier,fontSize:androidx.compose.ui.unit.TextUnit=16.sp) {
+    Text(text,color=MediaColors.text,fontSize=fontSize,
+        modifier=modifier.mediaGlass(scene,scrimAlpha=MediaColors.readableScrimAlpha).padding(horizontal=14.dp,vertical=8.dp))
 }

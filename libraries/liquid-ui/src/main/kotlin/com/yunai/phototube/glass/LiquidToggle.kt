@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
@@ -54,7 +55,8 @@ fun LiquidToggle(
     selected: () -> Boolean,
     onSelect: (Boolean) -> Unit,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     val palette = LocalGlassPalette.current
     val accentColor = palette.accent
@@ -63,6 +65,7 @@ fun LiquidToggle(
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val dragWidth = with(density) { 20f.dp.toPx() }
+    val currentEnabled by rememberUpdatedState(enabled)
     val currentSelected by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
     val animationScope = rememberCoroutineScope()
@@ -78,7 +81,10 @@ fun LiquidToggle(
             pressedScale = 1.5f,
             onDragStarted = {},
             onDragStopped = {
-                if (didDrag) {
+                if (!currentEnabled) {
+                    fraction = if (currentSelected()) 1f else 0f
+                    didDrag = false
+                } else if (didDrag) {
                     fraction = if (targetValue >= 0.5f) 1f else 0f
                     currentOnSelect(fraction == 1f)
                     didDrag = false
@@ -86,6 +92,12 @@ fun LiquidToggle(
                     fraction = if (currentSelected()) 0f else 1f
                     currentOnSelect(fraction == 1f)
                 }
+            },
+            onDragCancelled = {
+                // An interrupted press is neither a click nor a committed drag.
+                didDrag = false
+                fraction = if (currentSelected()) 1f else 0f
+                animateToValue(fraction)
             },
             onDrag = { _, dragAmount ->
                 if (!didDrag) {
@@ -144,9 +156,10 @@ fun LiquidToggle(
                 .semantics {
                     role = Role.Switch
                     toggleableState = ToggleableState(selected())
-                    onClick { onSelect(!selected()); true }
+                    if (!enabled) disabled()
+                    onClick { if (enabled) { onSelect(!selected()); true } else false }
                 }
-                .then(dampedDragAnimation.modifier)
+                .then(if (enabled) dampedDragAnimation.modifier else Modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(
                         backdrop,

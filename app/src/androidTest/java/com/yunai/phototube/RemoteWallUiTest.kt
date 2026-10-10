@@ -38,7 +38,7 @@ class RemoteWallUiTest {
                 override fun dispatch(request:RecordedRequest):MockResponse {
                     val url=request.requestUrl!!
                     return when {
-                        url.encodedPath.endsWith("/health") -> json("""{"status":"ok","database":{"reachable":true},"aiWorker":null,"xmpExport":{}}""")
+                        url.encodedPath.endsWith("/health") -> json("""{"status":"ok","database":{"reachable":true,"migrationVersion":1},"xmpExport":{"available":false}}""")
                         url.encodedPath.endsWith("/auth/session") -> json("""{"authenticated":true,"passwordSet":true}""")
                         url.encodedPath.endsWith("/timeline-summary") -> if(url.queryParameter("kind")=="VIDEO") json("""{"granularity":"MONTH","groups":[]}""") else json("""{"granularity":"MONTH","groups":[{"key":"2026-09","startsAt":"2026-09-01T00:00:00Z","count":105}]}""")
                         url.encodedPath.endsWith("/thumbnail") -> {images.incrementAndGet();MockResponse().setHeader("Content-Type","image/png").setBody(Buffer().write(bytes))}

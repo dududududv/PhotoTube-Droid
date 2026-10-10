@@ -14,6 +14,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -25,7 +26,7 @@ import com.yunai.phototube.R
 import kotlinx.coroutines.delay
 
 @Stable
-internal class VideoPlayback(val player: ExoPlayer) {
+internal class VideoPlayback(val player: ExoPlayer, private val preferences: com.yunai.phototube.data.PlaybackPreferences? = null) {
     var playing by mutableStateOf(false)
     var ready by mutableStateOf(false)
     var buffering by mutableStateOf(true)
@@ -33,44 +34,71 @@ internal class VideoPlayback(val player: ExoPlayer) {
     var position by mutableLongStateOf(0L)
     var duration by mutableLongStateOf(0L)
     var muted by mutableStateOf(true)
+    var volume by mutableFloatStateOf(preferences?.volume ?: 1f)
     var speed by mutableFloatStateOf(1f)
     var wantsPlay by mutableStateOf(true)
+    internal var interactionActive=false
+    internal var released=false
+    fun resumeAfterSeek() {
+        if(!released) player.playWhenReady=interactionActive && wantsPlay
+    }
     fun toggle() {
-        wantsPlay = !playing
+        wantsPlay = !wantsPlay
         if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
         player.playWhenReady = wantsPlay
     }
-    fun toggleSound() { muted = !muted; player.volume = if(muted) 0f else 1f }
+    fun toggleSound() { muted = !muted; preferences?.muted = muted; player.volume = if(muted) 0f else volume }
+    fun changeVolume(value: Float) {
+        volume = value.coerceIn(0f, 1f)
+        muted = volume == 0f
+        preferences?.volume = volume
+        preferences?.muted = muted
+        player.volume = if(muted) 0f else volume
+    }
     fun changeSpeed(value: Float) { speed = value; player.setPlaybackSpeed(value) }
     fun retry() { error = null; buffering = true; player.prepare(); player.playWhenReady = wantsPlay }
 }
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-internal fun rememberVideoPlayback(photo: Photo, active: Boolean): VideoPlayback {
+internal fun rememberVideoPlayback(photo: Photo, active: Boolean, mediaUri:String?=null): VideoPlayback {
     val context = LocalContext.current
     val view = LocalView.current
-    var savedPosition by rememberSaveable(photo.id) { mutableLongStateOf(0L) }
-    var savedPlay by rememberSaveable(photo.id) { mutableStateOf(true) }
-    var savedMuted by rememberSaveable(photo.id) { mutableStateOf(true) }
-    var savedSpeed by rememberSaveable(photo.id) { mutableFloatStateOf(1f) }
-    val playback = remember(photo.id) { VideoPlayback(ExoPlayer.Builder(context).apply {
+    val preferences = remember(context) { com.yunai.phototube.data.PlaybackPreferences(context) }
+    var savedPosition by rememberSaveable(photo.id,mediaUri) { mutableLongStateOf(0L) }
+    var savedPlay by rememberSaveable(photo.id,mediaUri) { mutableStateOf(mediaUri != null || preferences.autoPlay) }
+    var savedMuted by rememberSaveable(photo.id,mediaUri) { mutableStateOf(preferences.muted) }
+    var savedSpeed by rememberSaveable(photo.id,mediaUri) { mutableFloatStateOf(1f) }
+    val playback = remember(photo.id,mediaUri) { VideoPlayback(ExoPlayer.Builder(context).apply {
         photo.remote?.let { source -> setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
             androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(source.server.client))) }
     }.build().apply {
-        setMediaItem(MediaItem.fromUri(photo.remote?.let {it.server.original(it.asset.id)} ?: "android.resource://${context.packageName}/${photo.id}"))
+        setMediaItem(MediaItem.fromUri(mediaUri ?: photo.remote?.let {it.server.original(it.asset.id)} ?: "android.resource://${context.packageName}/${photo.id}"))
         setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
         setHandleAudioBecomingNoisy(true)
-        volume = if(savedMuted) 0f else 1f
+        volume = if(savedMuted) 0f else preferences.volume
         seekTo(savedPosition)
         setPlaybackSpeed(savedSpeed)
-    }).apply { wantsPlay=savedPlay; muted=savedMuted; speed=savedSpeed; position=savedPosition } }
+    }, preferences).apply { wantsPlay=savedPlay; muted=savedMuted; speed=savedSpeed; position=savedPosition } }
     val isActive by rememberUpdatedState(active)
     DisposableEffect(playback, view) {
         val player = playback.player
         val listener = object : Player.Listener {
+            override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                // Duration is available before STATE_READY and may precede the first frame.
+                // Publish it now so a restored position is not clamped to a 1 ms UI range.
+                if (player.duration > 0) playback.duration = player.duration
+            }
             override fun onIsPlayingChanged(value: Boolean) {
                 playback.position=player.currentPosition
                 playback.playing=value
+            }
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // System stops must survive returning to the foreground. Our own
+                // lifecycle/seek pauses use USER_REQUEST and retain the user's intent.
+                if (!playWhenReady && (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS ||
+                        reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY)) {
+                    playback.wantsPlay = false
+                }
             }
             override fun onPositionDiscontinuity(oldPosition:Player.PositionInfo,newPosition:Player.PositionInfo,reason:Int) {
                 playback.position=player.currentPosition
@@ -85,17 +113,27 @@ internal fun rememberVideoPlayback(photo: Photo, active: Boolean): VideoPlayback
         }
         player.addListener(listener)
         val lifecycle = view.findViewTreeLifecycleOwner()?.lifecycle
+        playback.interactionActive=isActive && lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED)==true
         val observer = LifecycleEventObserver { _, event ->
-            if(event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) player.pause()
-            if(event == Lifecycle.Event.ON_RESUME && isActive && playback.wantsPlay) player.play()
+            if(event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                playback.interactionActive=false
+                savedPosition=player.currentPosition
+                savedPlay=playback.wantsPlay; savedMuted=playback.muted; savedSpeed=playback.speed
+                player.pause()
+            }
+            if(event == Lifecycle.Event.ON_RESUME) {
+                playback.interactionActive=isActive
+                playback.resumeAfterSeek()
+            }
         }
         lifecycle?.addObserver(observer)
         player.prepare()
-        onDispose { lifecycle?.removeObserver(observer); player.removeListener(listener); player.release() }
+        onDispose { playback.interactionActive=false;playback.released=true;lifecycle?.removeObserver(observer); player.removeListener(listener); player.release() }
     }
     LaunchedEffect(active, playback) {
         val resumed = view.findViewTreeLifecycleOwner()?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
-        playback.player.playWhenReady = active && resumed && playback.wantsPlay
+        playback.interactionActive=active && resumed
+        playback.resumeAfterSeek()
     }
     // Coarse time labels and restoration only. Visible progress draws on each frame;
     // all live video pixels go through TextureView.

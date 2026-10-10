@@ -7,7 +7,6 @@ import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -29,7 +28,8 @@ enum class ThemeAccent(val label: String, val light: Color, val dark: Color) {
 data class AppColors(
     val background: Color, val groupedBackground: Color, val group: Color,
     val text: Color, val secondary: Color, val glass: Color, val separator: Color,
-    val accent: Color, val selected: Color, val subtle: Color,
+    val accent: Color, val selected: Color, val subtle: Color, val destructive: Color,
+    val warning: Color,
 )
 val LocalAppColors = staticCompositionLocalOf<AppColors> { error("PhotoTubeTheme missing") }
 val LocalThemeController = staticCompositionLocalOf<ThemeController> { error("PhotoTubeTheme missing") }
@@ -40,6 +40,8 @@ object AppTheme {
 
 /** Media overlays deliberately retain contrast against images in either app theme. */
 object MediaColors {
+    const val readableScrimAlpha = .68f
+    val destructive = Color(0xFFFF6961)
     val background = Color.Black
     val text = Color.White
     val secondary = Color(0xFFD1D1D6)
@@ -97,41 +99,17 @@ fun PhotoTubeTheme(content: @Composable () -> Unit) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val accent = if (dark) controller.accent.dark else controller.accent.light
-    val colors = if (dark) AppColors(
-        Color(0xFF111312), Color.Black, Color(0xFF1C1C1E),
-        Color(0xFFF3F3F0), Color(0xFFACACB3), Color(0xFF121212), Color.White.copy(.1f),
-        accent, accent.copy(.18f), Color.White.copy(.06f)
-    ) else AppColors(
-        Color(0xFFF9F9FB), Color(0xFFF2F2F7), Color.White,
-        Color(0xFF1C1C1E), Color(0xFF626269), Color(0xFFFAFAFA), Color.Black.copy(.1f),
-        accent, accent.copy(.12f), Color.Black.copy(.04f)
-    )
-    val scheme = if (dark) darkColorScheme() else lightColorScheme()
+    val palette = remember(dark, controller.accent) {
+        createThemePalette(dark, controller.accent)
+    }
+    val colors = palette.colors
+    val mediaHandoff = remember { com.yunai.phototube.ui.media.MediaSourceHandoff() }
     CompositionLocalProvider(
+        com.yunai.phototube.ui.media.LocalMediaSourceHandoff provides mediaHandoff,
         LocalAppColors provides colors, LocalThemeController provides controller, LocalDarkTheme provides dark,
-        LocalGlassPalette provides GlassPalette(dark, accent, colors.glass,
-            colors.secondary.copy(if(dark) .36f else .2f), colors.text.copy(.04f),
-            navigationContent = colors.text,
-            navigationAccent = if (dark) accent else lerp(accent, Color.Black, .2f))
+        LocalGlassPalette provides palette.glass
     ) {
-        MaterialTheme(colorScheme = scheme.copy(
-            primary = accent, onPrimary = if(dark) Color.Black else Color.White,
-            secondary = accent, tertiary = accent,
-            onSecondary = if(dark) Color.Black else Color.White,
-            onTertiary = if(dark) Color.Black else Color.White,
-            secondaryContainer = colors.selected, onSecondaryContainer = colors.text,
-            tertiaryContainer = colors.selected, onTertiaryContainer = colors.text,
-            background = colors.background,
-            onBackground = colors.text, surface = colors.group, onSurface = colors.text,
-            onSurfaceVariant = colors.secondary, surfaceVariant = colors.groupedBackground,
-            primaryContainer = colors.selected, onPrimaryContainer = colors.text,
-            surfaceContainerLowest = colors.background, surfaceContainerLow = colors.group,
-            surfaceContainer = colors.group, surfaceContainerHigh = colors.group,
-            surfaceContainerHighest = colors.group, surfaceBright = colors.group,
-            surfaceDim = colors.groupedBackground, surfaceTint = accent,
-            outline = colors.secondary, outlineVariant = colors.separator
-        )) {
+        MaterialTheme(colorScheme = palette.scheme) {
             ThemeSystemBars()
             content()
         }
@@ -144,14 +122,29 @@ fun ThemeSystemBars(media: Boolean = false) {
     val view = LocalView.current
     val dark = LocalDarkTheme.current || media
     val context = LocalContext.current
-    SideEffect {
-        val window = (view.parent as? DialogWindowProvider)?.window ?: context.activity()?.window
-        window?.let {
-            WindowCompat.getInsetsController(it, view).apply {
-                isAppearanceLightStatusBars = !dark
-                isAppearanceLightNavigationBars = !dark
+    DisposableEffect(view, dark, context) {
+        fun applyAppearance() {
+            val window = (view.parent as? DialogWindowProvider)?.window ?: context.activity()?.window
+            window?.let {
+                WindowCompat.getInsetsController(it, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+                it.isNavigationBarContrastEnforced = false
             }
-            it.isNavigationBarContrastEnforced = false
+        }
+        // Dialog updates can copy the underlying window's appearance after composition.
+        // Apply after those updates and again when this window regains focus.
+        val update = Runnable { applyAppearance() }
+        val observer = view.viewTreeObserver
+        val listener = android.view.ViewTreeObserver.OnWindowFocusChangeListener { focused ->
+            if (focused) view.post(update)
+        }
+        observer.addOnWindowFocusChangeListener(listener)
+        view.post(update)
+        onDispose {
+            view.removeCallbacks(update)
+            if (observer.isAlive) observer.removeOnWindowFocusChangeListener(listener)
         }
     }
 }
