@@ -121,8 +121,8 @@ internal fun FilterMenu(backdrop: Backdrop, insets: CornerInsets, opacity: Float
             .drawBackdrop(backdrop, shape={RoundedCornerShape(24.dp)},
                 effects={vibrancy();blur(glass.blur.dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
                 highlight={glassHighlight(dark)},
-                // Preserve the shared glass optics; a light tint keeps menu text readable.
-                onDrawSurface={drawRect(colors.glass.copy(alpha=opacity+((if(dark) .58f else .68f)-opacity)*p))})
+                // Match the collapsed search button's shared blur and surface opacity.
+                onDrawSurface={drawRect(colors.glass.copy(alpha=opacity))})
             .clip(RoundedCornerShape(24.dp)).pointerInput(Unit) { detectTapGestures { } }
             .testTag("filter-menu").semantics { paneTitle=page.title }) {
             Icon(Icons.Rounded.FilterList,null,Modifier.align(Alignment.TopEnd).padding(13.dp).size(22.dp)
