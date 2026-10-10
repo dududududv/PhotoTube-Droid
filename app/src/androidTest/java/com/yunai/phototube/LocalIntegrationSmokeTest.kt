@@ -7,6 +7,14 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.yunai.phototube.data.LocalConnection
+import com.yunai.phototube.data.PhotoTubeServer
+import com.yunai.phototube.data.MediaLoadDiagnostics
+import coil3.request.CachePolicy
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
@@ -36,6 +44,41 @@ class LocalIntegrationSmokeTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             waitForGallery()
             rule.onNodeWithTag("local-login-password").assertDoesNotExist()
+        }
+    }
+
+    @Test fun authenticatedThumbnailsAndOriginalActuallyDecode() = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(LocalConnection.enabled && args.getString("localIntegrationSmoke") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val server = PhotoTubeServer(context, LocalConnection.BASE, {})
+        try {
+            server.login(requireNotNull(args.getString("localUsername")), requireNotNull(args.getString("localPassword")))
+            assertSame(server.cookies, server.client.cookieJar)
+            val assets = mutableListOf<com.yunai.phototube.data.RemoteAsset>()
+            var cursor: String? = null
+            do {
+                val page = server.assets(cursor)
+                assets += page.items
+                cursor = page.nextCursor
+            } while (cursor != null)
+            val thumbnails = assets.mapNotNull { server.thumbnail(it) }
+            assertTrue("Synthetic local gallery must contain thumbnails", thumbnails.isNotEmpty())
+            suspend fun decode(url: String) {
+                val result = server.imageLoader.execute(ImageRequest.Builder(context).data(url).size(128)
+                    .memoryCachePolicy(CachePolicy.DISABLED).build())
+                if (result is ErrorResult) fail("${MediaLoadDiagnostics.safeUrl(url)}: ${MediaLoadDiagnostics.reason(result.throwable)}")
+                assertTrue("Must decode pixels, not just receive a successful HTTP response", result is SuccessResult)
+                val image = (result as SuccessResult).image
+                assertTrue(image.width > 0 && image.height > 0)
+            }
+            // Use the production loader and client unchanged: no cache-header stripping or fake connectivity.
+            repeat(2) { for (url in thumbnails) decode(url) }
+            val photo = assets.first { it.kind == "PHOTO" && it.fileName.endsWith(".png", ignoreCase = true) }
+            decode(server.original(photo.id))
+            println("Decoded ${thumbnails.size * 2} local synthetic thumbnails and 1 original; memory cache disabled")
+        } finally {
+            server.dispose()
         }
     }
 

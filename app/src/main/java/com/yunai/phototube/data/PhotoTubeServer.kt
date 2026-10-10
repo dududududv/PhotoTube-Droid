@@ -59,12 +59,14 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
     private val mock=LocalMockData(context)
     val cookies=sessionCookies ?: SessionCookieJar(context,origin)
     val client=(transport?.newBuilder() ?: OkHttpClient.Builder()).cookieJar(cookies).proxy(java.net.Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
+        .eventListenerFactory(MediaLoadDiagnostics.networkEvents)
         .addInterceptor { chain ->
             val request=chain.request()
             check(request.url.scheme==origin.scheme && request.url.host==origin.host && request.url.port==origin.port) { "禁止跨来源请求" }
             check(LocalConnection.allowsTransport(origin, transport!=null)) { "禁止访问未授权服务" }
             chain.proceed(request)
         }
+        .addInterceptor(MediaLoadDiagnostics.responses)
         .dns { host ->
             check(host in setOf("localhost","127.0.0.1","::1")) { "禁止解析外部地址" }
             listOf(java.net.InetAddress.getLoopbackAddress())
@@ -120,10 +122,16 @@ internal class PhotoTubeServer(private val context:Context,address:String,privat
             else chain.proceed(chain.request())
         }.build()
     private val endpoints=Retrofit.Builder().baseUrl("$base/api/v1/").client(client).build().create(PhotoTubeEndpoints::class.java)
+    @OptIn(coil3.annotation.ExperimentalCoilApi::class)
     private fun createImageLoader()=ImageLoader.Builder(context).components {
         add(coil3.gif.AnimatedImageDecoder.Factory())
-        add(OkHttpNetworkFetcherFactory(callFactory={client}))
-    }.diskCache(null)
+        add(OkHttpNetworkFetcherFactory(callFactory={client},connectivityChecker={ context ->
+            // adb reverse reaches this exact local service even when Android has no default network.
+            // Keep the same authenticated client and its origin/redirect guards.
+            if(LocalConnection.enabled && LocalConnection.isLocalDevelopment(origin)) coil3.network.ConnectivityChecker.ONLINE
+            else coil3.network.ConnectivityChecker(context)
+        }))
+    }.eventListenerFactory(MediaLoadDiagnostics.imageEvents).diskCache(null)
         .apply {if(privateMedia) memoryCache(null)}.build()
     var imageLoader by androidx.compose.runtime.mutableStateOf(createImageLoader())
         private set
