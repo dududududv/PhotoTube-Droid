@@ -6,7 +6,6 @@ import com.yunai.phototube.ui.GlassMenuAction
 import com.yunai.phototube.glass.LiquidSlider
 import com.yunai.phototube.glass.LocalGlassPalette
 
-import com.yunai.phototube.ui.remote.PhotoTagEditor
 import com.yunai.phototube.data.photoTags
 import com.yunai.phototube.data.AssetActions
 import com.yunai.phototube.data.AssetAction
@@ -107,7 +106,8 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var zoomed by remember { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
     var info by rememberSaveable { mutableStateOf(false) }
-    var editingTags by rememberSaveable(current.id) { mutableStateOf(false) }
+    val detailExtent = remember { Animatable(if (info) .56f else 0f) }
+    LaunchedEffect(info) { detailExtent.animateTo(if (info) .56f else 0f, spring(1f, 450f)) }
     var more by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
@@ -127,7 +127,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var motionPlaying by remember(current.remote) {mutableStateOf(false)}
     val motionUrl=remote?.motionUrl()
     val videoMode=current.video || (motionPlaying && motionUrl!=null)
-    val playback = if(videoMode) rememberVideoPlayback(current, mediaReady && !closing && !pager.isScrollInProgress && !info && !editingTags && !delete && !more && !sharing,if(motionPlaying) motionUrl else null) else null
+    val playback = if(videoMode) rememberVideoPlayback(current, mediaReady && !closing && !pager.isScrollInProgress && !info && detailExtent.value < .001f && !delete && !more && !sharing,if(motionPlaying) motionUrl else null) else null
     LaunchedEffect(playback?.wantsPlay) {
         if(motionPlaying && playback?.player?.playbackState==androidx.media3.common.Player.STATE_ENDED) motionPlaying=false
     }
@@ -209,7 +209,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     LaunchedEffect(chrome, playback?.playing, pager.currentPage) {
         if(chrome && playback?.playing == true) { delay(4500); chrome = false }
     }
-    Dialog(onDismissRequest = ::close, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = { if (info) info = false else close() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         ThemeSystemBars(media = true)
         val view = LocalView.current
         SideEffect { (view.parent as? DialogWindowProvider)?.window?.apply { setDimAmount(0f); setWindowAnimations(0) } }
@@ -217,21 +217,23 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
         BoxWithConstraints(Modifier.fillMaxSize().testTag("media-viewer").semantics { stateDescription = "${pager.currentPage + 1}/${media.size} ${current.name}" }) {
             val width = constraints.maxWidth.toFloat()
             val height = constraints.maxHeight.toFloat()
+            val detailTopInset = WindowInsets.statusBars.getTop(androidx.compose.ui.platform.LocalDensity.current).toFloat()
             val landscapeVideo = videoMode && width > height
             val dismissal = (abs(drag) / height).coerceIn(0f,.6f)
             Box(Modifier.fillMaxSize().drawBehind { drawRect(MediaColors.background.copy(alpha=progress.value.coerceIn(0f,1f)*(1f-dismissal*1.4f))) })
-            Box(Modifier.fillMaxSize().layerBackdrop(scene).graphicsLayer {
-                translationY = drag * progress.value.coerceIn(0f,1f)
+            Box(Modifier.fillMaxSize().then(if (info || detailExtent.value > .001f) Modifier.clearAndSetSemantics {} else Modifier).layerBackdrop(scene).graphicsLayer {
+                val safeTop = detailTopInset * (detailExtent.value / .56f).coerceIn(0f, 1f)
+                translationY = drag * progress.value.coerceIn(0f,1f) - height * detailExtent.value / 2f + safeTop / 2f
                 // Release the dismissal scale together with the translation so the
                 // closing image lands exactly on the original thumbnail bounds.
-                scaleX = 1f-dismissal*.35f*progress.value.coerceIn(0f,1f); scaleY = scaleX
+                scaleX = (1f-dismissal*.35f*progress.value.coerceIn(0f,1f)) * (1f-detailExtent.value-safeTop/height).coerceAtLeast(.01f); scaleY = scaleX
             }) {
                 HorizontalPager(pager, Modifier.fillMaxSize().testTag("media-pager").graphicsLayer { val p=progress.value.coerceIn(0f,1f)
                     // Warm the real photo layer during the final part of the transition.
                     // The video surface still takes over only when its transition ends.
                     alpha = if(videoMode) { if(p >= .999f && !closing) 1f else 0f }
                         else ((p-.85f)/.15f).coerceIn(0f,1f) },
-                    userScrollEnabled = !videoMode && !zoomed && !closing && drag == 0f, pageSpacing = 16.dp, key = { media[it].id }) { index ->
+                    userScrollEnabled = !info && !videoMode && !zoomed && !closing && drag == 0f, pageSpacing = 16.dp, key = { media[it].id }) { index ->
                     val media = media[index]
                     if(media.video || (motionPlaying && index==pager.currentPage)) {
                         Box(Modifier.fillMaxSize().testTag("viewer-video-surface").semantics {stateDescription=if(playback?.ready==true) "已显示视频画面" else "正在加载视频"}
@@ -301,7 +303,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                     MediaTransitionArtwork(current,transitionSource,{progress.value},exiting=closing, sourceCornerRadius=request.sourceCornerRadius)
                 }
             }
-            AnimatedVisibility(chrome && !closing && chromeReady && abs(drag) < 10f, enter=fadeIn(tween(180)), exit=fadeOut(tween(140))) {
+            AnimatedVisibility(chrome && !info && detailExtent.value < .01f && !closing && chromeReady && abs(drag) < 10f, enter=fadeIn(tween(180)), exit=fadeOut(tween(140))) {
                 Box(Modifier.fillMaxSize()) {
                     if (!landscapeVideo) {
                     // Readable over bright media in landscape; remains visually
@@ -331,8 +333,6 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                             if(landscapeVideo) MediaAction("更多操作",MediaSymbol.MORE,{more=true})
                             else MediaGlassButton("更多操作",MediaSymbol.MORE,scene,{ more=true })
                             GlassActionMenu(more, {more=false}, scene, buildList {
-                                add(GlassMenuAction(if(paged) "当前已加载 ${media.size} 项" else "${pager.currentPage+1} / ${media.size}", enabled=false, onClick={}))
-                                add(GlassMenuAction("查看信息", onClick={info=true}))
                                 if(current.remote!=null) {
                                     add(GlassMenuAction(if(current.remote.detail?.optBoolean("archived")==true) "取消归档" else "归档",
                                         enabled=!remoteBusy && current.remote.detail!=null,
@@ -396,8 +396,9 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                 Text(message,color=MediaColors.text)
                 Box(Modifier.width(160.dp)) {com.yunai.phototube.ui.GlassSettingsAction("重试",{playback.retry()},media=true)}
             } }
+            if (info || detailExtent.value > .001f) MediaDetailsPanel(current, metadata, height, detailExtent,
+                onClose = { info = false }, onChanged = onRemoteChanged)
         }
-        if(info) MediaInfo(scene,current,metadata,onEditTags=if(current.remote!=null) {{info=false;editingTags=true}} else null) { info=false }
         if(privateConfirm) GlassConfirmation(scene,
             title=if(current.remote?.server?.privateMedia==true) "移出私密空间？" else "移入私密空间？",
             message=if(current.remote?.server?.privateMedia==true) "移出后，此内容将恢复为普通可见内容。" else "移入后，需要验证账号密码才能查看。",
@@ -405,7 +406,6 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
             onConfirm={privateConfirm=false;if(current.remote?.server?.privateMedia==true) remoteAction(AssetAction.PRIVATE,false) else privateAuthorization=true},
             onDismiss={privateConfirm=false})
         if(privateAuthorization) current.remote?.let {source -> com.yunai.phototube.ui.remote.PrivateMutationGate(source.server,onClose={privateAuthorization=false},onAuthorized={remoteAction(AssetAction.PRIVATE,true,it)})}
-        if(editingTags) current.remote?.let {source -> PhotoTagEditor(source,onChanged=onRemoteChanged,onClose={editingTags=false})}
         if(delete) GlassConfirmation(scene, title="删除${if(current.video) "视频" else "照片"}？",
             message=if(current.remote!=null) "移入回收站后可以恢复，NAS 原文件会保留。" else "从当前演示图库移除，可通过撤销恢复。",
             confirmLabel="删除", destructive=true, media=true,
@@ -531,37 +531,6 @@ private fun VideoControls(playback:VideoPlayback,scene:Backdrop,landscape:Boolea
         Spacer(Modifier.height(18.dp))
     }
 }
-@Composable
-private fun MediaInfo(backdrop: Backdrop, photo:Photo,metadata:MediaMetadata?,onEditTags:(()->Unit)?=null,onClose:()->Unit) {
-    var editing by rememberSaveable(photo.id) { mutableStateOf(false) }
-    GlassConfirmation(backdrop, title = photo.name, message = photo.date, confirmLabel = "关闭",
-        onConfirm = onClose, onDismiss = { if (editing) onEditTags?.invoke() else onClose() },
-        cancelLabel = null, media = true, closeRequested = editing, alignment = Alignment.BottomCenter, draggable = true,
-        details = { enabled ->
-            Column(Modifier.fillMaxWidth().testTag("media-info")) {
-                if (onEditTags != null) com.yunai.phototube.ui.SettingsNavigationRow("编辑标签", { editing = true },
-                    enabled = enabled && !editing && photo.remote?.detail != null, media = true)
-                val info = listOf(
-                    "类型" to (if (photo.remote != null) photo.name.substringAfterLast('.', "未知格式").uppercase() else if (photo.video) "视频 · MP4" else "照片 · JPEG"),
-                    "尺寸" to (metadata?.takeIf { it.width > 0 && it.height > 0 }?.let { "${it.width} × ${it.height}" } ?: "暂无尺寸信息"),
-                    "文件大小" to (metadata?.bytes?.takeIf { it > 0 }?.let(::mediaSizeLabel) ?: "暂无大小信息"),
-                    "来源" to (photo.remote?.detail?.optString("relativePath")?.takeIf { it.isNotBlank() } ?: "本地示例素材")
-                ) + if (photo.video) listOf("时长" to (metadata?.duration?.takeIf { it > 0 }?.let(::mediaTime) ?: "暂无时长信息")) else emptyList()
-                val remoteInfo = photo.remote?.detail?.let { detail ->
-                    listOf("状态" to mediaStateLabel(detail.optString("state")),
-                        "拍摄时间" to com.yunai.phototube.ui.remote.taskTimestamp(detail.optString("takenAt").takeIf { it.isNotBlank() } ?: photo.date)) +
-                        (detail.optJSONArray("tags")?.let { tags -> listOf("标签" to (0 until tags.length()).mapNotNull { tags.optJSONObject(it)?.optString("name")?.takeIf(String::isNotBlank) }.joinToString(" · ").ifBlank { "无" }) } ?: emptyList())
-                } ?: emptyList()
-                (info + remoteInfo).forEach { (key, value) ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        Text(key, color = MediaColors.secondary)
-                        Text(value, color = MediaColors.text, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
-                    }
-                }
-            }
-        })
-}
-
 internal fun mediaStateLabel(state: String): String = when (state) {
     "BROWSABLE" -> "可查看"; "PROCESSING" -> "处理中"; "OFFLINE" -> "文件离线"
     "TRASHED" -> "已移入回收站"; "FAILED" -> "处理失败"; else -> "状态未知"

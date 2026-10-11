@@ -1,6 +1,12 @@
 package com.yunai.phototube
 
 import androidx.compose.ui.test.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
+import androidx.compose.animation.core.Animatable
+import com.yunai.phototube.ui.media.MediaDetailsPanel
+import com.yunai.phototube.ui.media.Photo
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.yunai.phototube.data.*
@@ -139,4 +145,41 @@ class TagsTest {
         rule.onNode(hasSetTextAction() and hasText("海",substring=false)).assertExists()
         Assert.assertEquals("海",queries.last())
     }
+    @Test fun detailPanelRetriesAttachmentWithoutCreatingTagTwice() {
+        val creates=java.util.concurrent.atomic.AtomicInteger()
+        val attaches=java.util.concurrent.atomic.AtomicInteger()
+        host.dispatcher=object:okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request:RecordedRequest):MockResponse {
+                return when {
+                    request.method=="POST" && request.requestUrl!!.encodedPath=="/api/v1/tags" -> {
+                        creates.incrementAndGet(); json(tag("新标签"))
+                    }
+                    request.method=="POST" -> {
+                        if(attaches.incrementAndGet()==1) MockResponse().setResponseCode(503)
+                            .setBody("""{"code":"OFFLINE","message":"暂时离线"}""")
+                        else json(JSONObject())
+                    }
+                    request.requestUrl!!.encodedPath=="/api/v1/tags" -> json(JSONObject().put("items",JSONArray()).put("nextCursor",JSONObject.NULL))
+                    else -> json(JSONObject().put("tags",JSONArray().put(tag("新标签").put("source","MANUAL"))))
+                }
+            }
+        }
+        val source=RemoteMedia(RemoteAsset("photo","PHOTO","BROWSABLE","2026-09-16T00:00:00Z",0,"海边.jpg",null,10,10,false,null),server)
+        source.detail=JSONObject().put("tags",JSONArray())
+        rule.setContent { PhotoTubeTheme { BoxWithConstraints(Modifier.fillMaxSize()) {
+            MediaDetailsPanel(Photo(1,"海边.jpg","2026年9月16日",remote=source),null,
+                constraints.maxHeight.toFloat(),remember { Animatable(.88f) },{}, {})
+        } } }
+        rule.onNodeWithText("编辑标签").performClick()
+        rule.onNodeWithText("添加标签").performClick()
+        rule.onNodeWithTag("detail-tag-search").performTextInput("新标签")
+        rule.waitUntil(10000) {rule.onAllNodesWithText("新建“新标签”并添加").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("新建“新标签”并添加").performClick()
+        rule.waitUntil(10000) {rule.onAllNodesWithText("暂时离线").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("新建“新标签”并添加").performClick()
+        rule.waitUntil(10000) {rule.onAllNodesWithTag("photo-tags-panel").fetchSemanticsNodes().isNotEmpty()}
+        rule.onNodeWithText("新标签").assertIsDisplayed()
+        Assert.assertEquals(1,creates.get()); Assert.assertEquals(2,attaches.get())
+    }
+
 }

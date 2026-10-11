@@ -43,6 +43,7 @@ object MediaColors {
     const val readableScrimAlpha = .68f
     val destructive = Color(0xFFFF6961)
     val background = Color.Black
+    val detailPanel = Color(0xFF1C1C1E)
     val text = Color.White
     val secondary = Color(0xFFD1D1D6)
     val scrim = Color.Black
