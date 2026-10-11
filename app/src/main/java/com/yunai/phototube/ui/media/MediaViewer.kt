@@ -107,8 +107,16 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var drag by remember { mutableFloatStateOf(0f) }
     var info by rememberSaveable { mutableStateOf(false) }
     var detailBusy by remember { mutableStateOf(false) }
-    val detailExtent = remember { Animatable(if (info) MediaDetailsRestingExtent else 0f) }
-    LaunchedEffect(info) { detailExtent.animateTo(if (info) MediaDetailsRestingExtent else 0f, spring(1f, 450f)) }
+    var detailEditing by remember { mutableStateOf(false) }
+    var detailBodyHeight by remember(current.id) { mutableIntStateOf(0) }
+    var detailPull by remember { mutableFloatStateOf(0f) }
+    val detailScroll = rememberScrollState()
+    val detailEditingProgress by animateFloatAsState(if (detailEditing) 1f else 0f, spring(1f, 450f), label = "detail-tag-stage")
+    val detailReveal = remember { Animatable(if (info) 1f else 0f) }
+    LaunchedEffect(info) {
+        detailReveal.animateTo(if (info) 1f else 0f, spring(1f, 450f))
+        if (!info) { detailScroll.scrollTo(0); detailPull = 0f }
+    }
     var more by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
@@ -129,7 +137,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var motionPlaying by remember(current.remote) {mutableStateOf(false)}
     val motionUrl=remote?.motionUrl()
     val videoMode=current.video || (motionPlaying && motionUrl!=null)
-    val playback = if(videoMode) rememberVideoPlayback(current, mediaReady && !closing && !pager.isScrollInProgress && !info && detailExtent.value < .001f && !delete && !more && !sharing,if(motionPlaying) motionUrl else null) else null
+    val playback = if(videoMode) rememberVideoPlayback(current, mediaReady && !closing && !pager.isScrollInProgress && !info && detailReveal.value < .001f && !delete && !more && !sharing,if(motionPlaying) motionUrl else null) else null
     LaunchedEffect(playback?.wantsPlay) {
         if(motionPlaying && playback?.player?.playbackState==androidx.media3.common.Player.STATE_ENDED) motionPlaying=false
     }
@@ -224,11 +232,17 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
             val dismissal = (abs(drag) / height).coerceIn(0f,.6f)
             Box(Modifier.fillMaxSize().drawBehind { drawRect(MediaColors.background.copy(alpha=progress.value.coerceIn(0f,1f)*(1f-dismissal*1.4f))) })
             val detailDensity = androidx.compose.ui.platform.LocalDensity.current
-            Box(Modifier.fillMaxWidth().height(with(detailDensity) { (height * (1f-detailExtent.value)).toDp() })
-                .padding(top = with(detailDensity) { (detailTopInset * (detailExtent.value / MediaDetailsRestingExtent).coerceIn(0f,1f)).toDp() })
-                .then(if (info || detailExtent.value > .001f) Modifier.clearAndSetSemantics {} else Modifier)
+            // Reserve room for measured information, rather than splitting every screen by a percentage.
+            val detailHeaderTarget = minOf(width * 1.25f,
+                (height - detailTopInset - detailBodyHeight.takeIf { it > 0 }.let { it ?: with(detailDensity) { 300.dp.roundToPx() } })
+                    .coerceAtLeast(with(detailDensity) { 128.dp.toPx() })) + detailTopInset
+            val detailHeader by animateFloatAsState(detailHeaderTarget, spring(1f, 450f), label = "detail-photo-space")
+            Box(Modifier.fillMaxWidth().height(with(detailDensity) { (height + (detailHeader-height)*detailReveal.value).toDp() })
+                .padding(top = with(detailDensity) { (detailTopInset * detailReveal.value).toDp() })
+                .then(if (info || detailReveal.value > .001f) Modifier.clearAndSetSemantics {} else Modifier)
                 .layerBackdrop(scene).graphicsLayer {
-                    translationY = drag * progress.value.coerceIn(0f,1f)
+                    translationY = drag * progress.value.coerceIn(0f,1f) - detailScroll.value * detailReveal.value - detailHeader * detailEditingProgress + detailPull
+                    alpha = 1f - detailEditingProgress
                     scaleX = 1f-dismissal*.35f*progress.value.coerceIn(0f,1f); scaleY = scaleX
                 }) {
                 HorizontalPager(pager, Modifier.fillMaxSize().testTag("media-pager").graphicsLayer { val p=progress.value.coerceIn(0f,1f)
@@ -306,7 +320,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                     MediaTransitionArtwork(current,transitionSource,{progress.value},exiting=closing, sourceCornerRadius=request.sourceCornerRadius)
                 }
             }
-            AnimatedVisibility(chrome && !info && detailExtent.value < .01f && !closing && chromeReady && abs(drag) < 10f, enter=fadeIn(tween(180)), exit=fadeOut(tween(140))) {
+            AnimatedVisibility(chrome && !info && detailReveal.value < .01f && !closing && chromeReady && abs(drag) < 10f, enter=fadeIn(tween(180)), exit=fadeOut(tween(140))) {
                 Box(Modifier.fillMaxSize()) {
                     if (!landscapeVideo) {
                     // Readable over bright media in landscape; remains visually
@@ -399,10 +413,12 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                 Text(message,color=MediaColors.text)
                 Box(Modifier.width(160.dp)) {com.yunai.phototube.ui.GlassSettingsAction("重试",{playback.retry()},media=true)}
             } }
-            if (info || detailExtent.value > .001f) {
-                MediaDetailsPanel(current, metadata, height, detailExtent,
-                    onClose = { info = false }, onChanged = onRemoteChanged, onBusyChanged = { detailBusy = it }, modifier = Modifier.layerBackdrop(detailsScene))
-                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
+            if (info || detailReveal.value > .001f) {
+                MediaDetailsPanel(current, metadata, height, detailReveal,
+                    onClose = { info = false }, onChanged = onRemoteChanged, onBusyChanged = { detailBusy = it }, modifier = Modifier.layerBackdrop(detailsScene),
+                    photoHeaderHeight = detailHeader, infoScroll = detailScroll, onBodyHeight = { if (detailBodyHeight == 0) detailBodyHeight = it },
+                    onEditingChanged = { detailEditing = it }, pullOffset = detailPull, onPull = { detailPull = it })
+                if (!detailEditing) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
                     .padding(horizontal = 24.dp, vertical = 12.dp).testTag("detail-actions"),
                     horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     MediaGlassButton(if(sharing) "正在准备分享" else "分享", MediaSymbol.SHARE, detailsScene, ::share, enabled = !detailBusy, surfaceColor = MediaColors.detailPanel.copy(.88f))
