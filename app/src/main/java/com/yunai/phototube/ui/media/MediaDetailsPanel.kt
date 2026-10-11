@@ -49,6 +49,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+internal const val MediaDetailsRestingExtent = .44f
+
 private enum class DetailPage { INFO, TAGS, PICK }
 
 /** Shares the viewer window and a single sheet; never opens another management dialog. */
@@ -91,7 +93,7 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
         override suspend fun onPreFling(available: Velocity): Velocity {
             if (currentBusy) return Velocity.Zero
             val projected = extent.value - available.y / height * .15f
-            val target = listOf(0f, .56f, .88f).minBy { abs(it - projected) }
+            val target = listOf(0f, MediaDetailsRestingExtent, .88f).minBy { abs(it - projected) }
             if (extent.value >= .879f && available.y < 0) return Velocity.Zero
             if (target == 0f) currentClose() else extent.animateTo(target, spring(1f, 450f), initialVelocity = -available.y / height)
             return available
@@ -126,7 +128,7 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
         .semantics {
             isTraversalGroup = true; paneTitle = "照片与视频信息"
             expand { scope.launch { extent.animateTo(.88f, spring(1f, 450f)) }; true }
-            collapse { scope.launch { extent.animateTo(.56f, spring(1f, 450f)) }; true }
+            collapse { scope.launch { extent.animateTo(MediaDetailsRestingExtent, spring(1f, 450f)) }; true }
             dismiss { if (!busy) { onClose(); true } else false }
         }
         .nestedScroll(scrollConnection)
@@ -138,7 +140,7 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
                 Text(if (page == DetailPage.PICK) "标签" else "信息", color = accent)
             }
             Text(if (page == DetailPage.PICK) "添加标签" else "照片标签", color = MediaColors.text,
-                fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold)
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MediaColors.text)
         error?.let { Text(it, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = MediaColors.text) }
@@ -153,53 +155,47 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
         AnimatedContent(page, Modifier.weight(1f), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "detail-section") { section ->
             when (section) {
                 DetailPage.INFO -> Column(Modifier.fillMaxSize().testTag("media-info").verticalScroll(infoScroll)
-                    .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 82.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MediaColors.detailPanel)) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 82.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MediaColors.detailPanel)) {
+                        Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(source?.detail?.nullString("takenAt")?.let { com.yunai.phototube.ui.remote.taskTimestamp(it) } ?: photo.date,
-                                color = MediaColors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                            Text(photo.name, color = MediaColors.secondary, fontSize = 15.sp)
-                        }
-                        HorizontalDivider(color = Color.White.copy(.10f))
-                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (photo.video) "视频" else "照片", Modifier.weight(1f), color = MediaColors.text, fontSize = 16.sp)
-                            Text(photo.name.substringAfterLast('.', if(photo.video) "视频" else "照片").uppercase(),
-                                Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(.08f)).padding(horizontal = 10.dp, vertical = 4.dp),
-                                color = MediaColors.text, fontSize = 13.sp)
+                                color = MediaColors.text, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+                            Text(photo.name, color = MediaColors.secondary, fontSize = 13.sp, lineHeight = 18.sp)
                         }
                         val specs = buildList {
+                            add(photo.name.substringAfterLast('.', if(photo.video) "视频" else "照片").uppercase())
                             metadata?.takeIf { it.width > 0 && it.height > 0 }?.let { add("${it.width} × ${it.height}") }
                             metadata?.takeIf { it.bytes > 0 }?.let { add(mediaSizeLabel(it.bytes)) }
                             metadata?.takeIf { photo.video && it.duration > 0 }?.let { add(mediaTime(it.duration)) }
                         }
                         if (specs.isNotEmpty()) {
                             HorizontalDivider(color = Color.White.copy(.10f))
-                            Text(specs.joinToString(" · "), Modifier.padding(16.dp), color = MediaColors.secondary, fontSize = 15.sp)
+                            Text(specs.joinToString(" · "), Modifier.padding(horizontal = 14.dp, vertical = 11.dp), color = MediaColors.secondary, fontSize = 13.sp, lineHeight = 18.sp)
                         }
                     }
                     source?.detail?.nullString("relativePath")?.let { path ->
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MediaColors.detailPanel).padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("文件位置", color = MediaColors.secondary, fontSize = 13.sp)
-                            Text(path, color = MediaColors.text, fontSize = 15.sp)
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MediaColors.detailPanel).padding(horizontal = 14.dp, vertical = 11.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("文件位置", color = MediaColors.secondary, fontSize = 13.sp, lineHeight = 18.sp)
+                            Text(path, color = MediaColors.text, fontSize = 13.sp, lineHeight = 18.sp)
                         }
                     }
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MediaColors.detailPanel)
-                        .clickable(enabled = source?.detail != null) { page = DetailPage.TAGS }.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(if (tags.isEmpty()) "添加标签" else "编辑标签", color = accent, fontSize = 16.sp)
-                        if (tags.isNotEmpty()) Text(tags.joinToString(" · ") { it.name }, color = MediaColors.text, fontSize = 15.sp)
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MediaColors.detailPanel)
+                        .clickable(enabled = source?.detail != null) { page = DetailPage.TAGS }.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (tags.isEmpty()) "添加标签" else "编辑标签", color = accent, fontSize = 14.sp, lineHeight = 20.sp)
+                        if (tags.isNotEmpty()) Text(tags.joinToString(" · ") { it.name }, color = MediaColors.text, fontSize = 13.sp, lineHeight = 18.sp)
                     }
                     source?.detail?.nullString("state")?.takeIf { it != "BROWSABLE" }?.let { Text(mediaStateLabel(it), color = MediaColors.secondary) }
                 }
                 DetailPage.TAGS -> LazyColumn(Modifier.fillMaxSize().testTag("photo-tags-panel"), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 82.dp)) {
-                    item { Text(photo.name, color = MediaColors.secondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 12.dp)) }
+                    item { Text(photo.name, color = MediaColors.secondary, fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(bottom = 12.dp)) }
                     if (tags.isEmpty()) item { Text("这张照片还没有标签", color = MediaColors.secondary) }
                     items(tags, key = { it.id }) { tag ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(tag.name, color = MediaColors.text, fontSize = 17.sp)
-                                Text(when(tag.source) {"AI" -> "AI 标签"; "RULE" -> "规则标签"; "MANUAL" -> "人工标签"; else -> "标签"}, color = MediaColors.secondary, fontSize = 12.sp)
+                                Text(tag.name, color = MediaColors.text, fontSize = 13.sp, lineHeight = 18.sp)
+                                Text(when(tag.source) {"AI" -> "AI 标签"; "RULE" -> "规则标签"; "MANUAL" -> "人工标签"; else -> "标签"}, color = MediaColors.secondary, fontSize = 12.sp, lineHeight = 16.sp)
                             }
                             IconButton(onClick = { mutate { it.detach(source!!.asset.id, tag.id) } }, enabled = !busy && !needsRefresh,
                                 modifier = Modifier.testTag("remove-photo-tag-${tag.id}")) { Icon(Icons.Rounded.Close, "移除标签：${tag.name}", tint = MediaColors.secondary) }
@@ -208,7 +204,7 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
                     item { TextButton(onClick = { page = DetailPage.PICK }, enabled = !busy && !needsRefresh) {
                         Icon(Icons.Rounded.Add, null, tint = MediaColors.text); Spacer(Modifier.width(8.dp)); Text("添加标签", color = MediaColors.text)
                     } }
-                    if (tags.any { it.source in setOf("AI", "RULE") }) item { Text("移除自动标签后，后续扫描不会立即添加回来。", color = MediaColors.secondary, fontSize = 13.sp) }
+                    if (tags.any { it.source in setOf("AI", "RULE") }) item { Text("移除自动标签后，后续扫描不会立即添加回来。", color = MediaColors.secondary, fontSize = 13.sp, lineHeight = 18.sp) }
                 }
                 DetailPage.PICK -> if (source != null) DetailTagPicker(source.server, tags.map { it.id }.toSet(), !busy && !needsRefresh,
                     onSearchFocus = { scope.launch { extent.animateTo(.88f, spring(1f, 450f)) } },
@@ -229,7 +225,8 @@ private fun DetailTagPicker(server: PhotoTubeServer, selected: Set<Long>, enable
     val flow = remember(server, query) { Pager(PagingConfig(100, enablePlaceholders = false)) { AlbumPagingSource { cursor -> catalog.tags(query, cursor) } }.flow }
     val rows = flow.collectAsLazyPagingItems()
     Column(Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(bottom = 82.dp)) {
-        OutlinedTextField(keyword, { if (it.length <= 120) keyword = it }, placeholder = { Text("搜索标签") }, singleLine = true,
+        OutlinedTextField(keyword, { if (it.length <= 120) keyword = it }, placeholder = { Text("搜索标签", fontSize = 14.sp) }, singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
             modifier = Modifier.fillMaxWidth().testTag("detail-tag-search").onFocusChanged { if (it.isFocused) onSearchFocus() }, enabled = enabled, shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = MediaColors.text, unfocusedTextColor = MediaColors.text,
                 cursorColor = MediaColors.text, focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent,
@@ -239,7 +236,7 @@ private fun DetailTagPicker(server: PhotoTubeServer, selected: Set<Long>, enable
             items(rows.itemCount, key = rows.itemKey { it.id }) { index -> rows[index]?.let { tag ->
                 Row(Modifier.fillMaxWidth().clickable(enabled = enabled && tag.id !in selected) { onPick(tag.id) }
                     .heightIn(min = 56.dp).testTag("pick-tag-${tag.id}"), verticalAlignment = Alignment.CenterVertically) {
-                    Text(tag.name, Modifier.weight(1f), color = MediaColors.text)
+                    Text(tag.name, Modifier.weight(1f), color = MediaColors.text, fontSize = 14.sp, lineHeight = 20.sp)
                     Icon(if(tag.id in selected) Icons.Rounded.Check else Icons.Rounded.Add, if(tag.id in selected) "已添加" else "添加", tint = MediaColors.secondary)
                 }
             } }

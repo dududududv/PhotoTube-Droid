@@ -107,8 +107,8 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var drag by remember { mutableFloatStateOf(0f) }
     var info by rememberSaveable { mutableStateOf(false) }
     var detailBusy by remember { mutableStateOf(false) }
-    val detailExtent = remember { Animatable(if (info) .56f else 0f) }
-    LaunchedEffect(info) { detailExtent.animateTo(if (info) .56f else 0f, spring(1f, 450f)) }
+    val detailExtent = remember { Animatable(if (info) MediaDetailsRestingExtent else 0f) }
+    LaunchedEffect(info) { detailExtent.animateTo(if (info) MediaDetailsRestingExtent else 0f, spring(1f, 450f)) }
     var more by remember { mutableStateOf(false) }
     var delete by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
@@ -225,7 +225,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
             Box(Modifier.fillMaxSize().drawBehind { drawRect(MediaColors.background.copy(alpha=progress.value.coerceIn(0f,1f)*(1f-dismissal*1.4f))) })
             val detailDensity = androidx.compose.ui.platform.LocalDensity.current
             Box(Modifier.fillMaxWidth().height(with(detailDensity) { (height * (1f-detailExtent.value)).toDp() })
-                .padding(top = with(detailDensity) { (detailTopInset * (detailExtent.value / .56f).coerceIn(0f,1f)).toDp() })
+                .padding(top = with(detailDensity) { (detailTopInset * (detailExtent.value / MediaDetailsRestingExtent).coerceIn(0f,1f)).toDp() })
                 .then(if (info || detailExtent.value > .001f) Modifier.clearAndSetSemantics {} else Modifier)
                 .layerBackdrop(scene).graphicsLayer {
                     translationY = drag * progress.value.coerceIn(0f,1f)
