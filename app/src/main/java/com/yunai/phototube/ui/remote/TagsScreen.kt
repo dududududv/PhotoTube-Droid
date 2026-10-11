@@ -18,6 +18,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.runtime.*
@@ -39,6 +45,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TagsScreen(server: PhotoTubeServer, onClose: () -> Unit, onChanged: () -> Unit = {}, onPick: ((RemoteTag) -> Unit)? = null) {
     val repository = remember(server) { TagRepository(server) }
@@ -46,7 +53,7 @@ internal fun TagsScreen(server: PhotoTubeServer, onClose: () -> Unit, onChanged:
     var keyword by rememberSaveable(server) { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     LaunchedEffect(keyword) { delay(300); query = keyword.trim() }
-    val flow = remember(query) { Pager(PagingConfig(100, initialLoadSize = 100, maxSize = 500, enablePlaceholders = false)) { AlbumPagingSource { cursor -> catalog.tags(query, cursor) } }.flow }
+    val flow = remember(server, query) { Pager(PagingConfig(100, initialLoadSize = 100, maxSize = 500, enablePlaceholders = false)) { AlbumPagingSource { cursor -> catalog.tags(query, cursor) } }.flow }
     val tags = flow.collectAsLazyPagingItems()
     var editing by rememberSaveable(server) { mutableStateOf(false) }
     var cleanupOpen by rememberSaveable(server) { mutableStateOf(false) }
@@ -61,6 +68,23 @@ internal fun TagsScreen(server: PhotoTubeServer, onClose: () -> Unit, onChanged:
     val scope = rememberCoroutineScope()
     val listBackdrop = rememberLayerBackdrop()
     val title = if (onPick == null) "标签库" else "添加标签"
+    val refreshState = rememberPullToRefreshState()
+    val refreshing = tags.loadState.refresh is LoadState.Loading
+    val canRefresh = !busy && !editing && deleting == null && !cleanupOpen && !rulesOpen && browsing == null
+    val refreshOnResume by rememberUpdatedState { if (canRefresh) tags.refresh() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, server) {
+        // Paging already performs the first load. Subsequent foreground entries may follow web/AI edits.
+        var hasResumed = false
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (hasResumed) refreshOnResume()
+                hasResumed = true
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     ManagementPage(title, onClose, dismissEnabled = !busy, scrollable = false, showTitle = false, overlay = { scene ->
         if(editing) com.yunai.phototube.ui.GlassConfirmation(scene,
             title=if(target==null) "新建标签" else "重命名标签", message="", confirmLabel="保存标签",
@@ -100,7 +124,10 @@ internal fun TagsScreen(server: PhotoTubeServer, onClose: () -> Unit, onChanged:
             })
         }
     }) {
-        LazyColumn(Modifier.fillMaxWidth().weight(1f).layerBackdrop(listBackdrop).testTag("tag-list"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.fillMaxWidth().weight(1f).pullToRefresh(
+            isRefreshing=refreshing,state=refreshState,enabled=canRefresh,
+            onRefresh={if(!refreshing) tags.refresh()})) {
+        LazyColumn(Modifier.fillMaxSize().layerBackdrop(listBackdrop).testTag("tag-list"), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("heading") {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     ManagementTitle(title)
@@ -139,7 +166,7 @@ internal fun TagsScreen(server: PhotoTubeServer, onClose: () -> Unit, onChanged:
                     }
                 }
             } }
-            if (tags.loadState.refresh is LoadState.Loading || tags.loadState.append is LoadState.Loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+            if (tags.loadState.append is LoadState.Loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             val failure = (tags.loadState.refresh as? LoadState.Error) ?: (tags.loadState.append as? LoadState.Error)
             if(onPick==null) item("management") {
                 ManagementGroup("标签管理", compact=true) {
@@ -150,13 +177,16 @@ internal fun TagsScreen(server: PhotoTubeServer, onClose: () -> Unit, onChanged:
             if (failure != null) item { Text(failure.error.message ?: "读取失败"); GlassSettingsAction("重试",tags::retry) }
             if (tags.loadState.refresh is LoadState.NotLoading && tags.itemCount == 0) item { Text("没有匹配的标签", color = AppTheme.colors.secondary) }
         }
+        PullToRefreshDefaults.Indicator(state=refreshState,isRefreshing=refreshing,
+            modifier=Modifier.align(Alignment.TopCenter),containerColor=AppTheme.colors.group,color=AppTheme.colors.accent)
+        }
     }
-    if (cleanupOpen) UnusedTagsScreen(server, onChanged = { tags.refresh(); onChanged() }, onClose = { cleanupOpen = false })
-    if (rulesOpen) TagRulesScreen(server, onChanged, onClose = { rulesOpen = false })
+    if (cleanupOpen) UnusedTagsScreen(server, onChanged = { tags.refresh(); onChanged() }, onClose = { cleanupOpen = false; tags.refresh() })
+    if (rulesOpen) TagRulesScreen(server, onChanged = { tags.refresh(); onChanged() }, onClose = { rulesOpen = false; tags.refresh() })
     browsing?.let { tag ->
         ScopedMediaGallery(server, WallFilters(tagsAll = setOf(tag.id)), tag.name,
             "不含归档与私密内容", "此标签下没有可浏览的照片或视频。", "tag-photos",
-            onChanged = { tags.refresh(); onChanged() }, onClose = { browsing = null })
+            onChanged = { tags.refresh(); onChanged() }, onClose = { browsing = null; tags.refresh() })
     }
 
 

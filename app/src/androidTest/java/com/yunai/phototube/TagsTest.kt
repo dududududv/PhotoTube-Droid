@@ -22,11 +22,11 @@ class TagsTest {
     private fun tag(name:String="海边")=JSONObject().put("id",9007199254740993L).put("name",name).put("assetCount",2)
     private fun json(value:Any)=MockResponse().setHeader("Content-Type","application/json").setBody(value.toString())
     @Before fun setup() {
-        val cert=HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        val cert=HeldCertificate.Builder().addSubjectAlternativeName("127.0.0.1").build()
         val tls=HandshakeCertificates.Builder().heldCertificate(cert).build()
         val trust=HandshakeCertificates.Builder().addTrustedCertificate(cert.certificate).build()
-        host=MockWebServer().apply {useHttps(tls.sslSocketFactory(),false);start(java.net.InetAddress.getLoopbackAddress(),0)}
-        server=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,host.url("/").newBuilder().host("localhost").build().toString(),{},OkHttpClient.Builder().sslSocketFactory(trust.sslSocketFactory(),trust.trustManager).build())
+        host=MockWebServer().apply {useHttps(tls.sslSocketFactory(),false);start(java.net.InetAddress.getByName("127.0.0.1"),0)}
+        server=PhotoTubeServer(InstrumentationRegistry.getInstrumentation().targetContext,host.url("/").newBuilder().host("127.0.0.1").build().toString(),{},OkHttpClient.Builder().sslSocketFactory(trust.sslSocketFactory(),trust.trustManager).build())
     }
     @After fun cleanup() {server.cookies.clear();server.dispose();host.shutdown()}
     @Test fun tagCrudAndAssetRelationsUseDistinctEndpoints()=runBlocking {
@@ -96,5 +96,47 @@ class TagsTest {
     @Test fun unconfirmedAutomaticTagsRemainVisible() {
         val result=photoTags(JSONObject().put("tags",JSONArray().put(JSONObject().put("id",4).put("name","海边").put("source","AI").put("confirmed",false))))
         Assert.assertEquals("海边",result.single().name)
+    }
+
+    @Test fun externalUpdatesRefreshOnForegroundAndPullWithoutClearingSearch() {
+        val current = java.util.concurrent.atomic.AtomicReference("海边")
+        val count = java.util.concurrent.atomic.AtomicInteger(2)
+        val reads = java.util.concurrent.atomic.AtomicInteger()
+        val queries = java.util.concurrent.CopyOnWriteArrayList<String>()
+        host.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                Assert.assertEquals("GET", request.method)
+                Assert.assertEquals("/api/v1/tags", request.requestUrl!!.encodedPath)
+                reads.incrementAndGet()
+                queries += request.requestUrl!!.queryParameter("keyword").orEmpty()
+                return json(JSONObject().put("items",JSONArray().put(tag(current.get()).put("assetCount",count.get())))
+                    .put("nextCursor",JSONObject.NULL))
+            }
+        }
+        val owner = object : androidx.lifecycle.LifecycleOwner {
+            val registry = androidx.lifecycle.LifecycleRegistry(this)
+            override val lifecycle: androidx.lifecycle.Lifecycle get() = registry
+        }
+        rule.runOnUiThread { owner.registry.currentState = androidx.lifecycle.Lifecycle.State.RESUMED }
+        rule.setContent { androidx.compose.runtime.CompositionLocalProvider(
+            androidx.lifecycle.compose.LocalLifecycleOwner provides owner
+        ) { PhotoTubeTheme { TagsScreen(server,{}) } } }
+        rule.waitUntil(10000) { rule.onAllNodesWithText("海边").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNode(hasSetTextAction() and hasText("搜索标签")).performTextReplacement("海")
+        rule.waitUntil(10000) { queries.lastOrNull() == "海" }
+        rule.waitForIdle()
+        val before = reads.get()
+        rule.runOnUiThread { owner.registry.currentState = androidx.lifecycle.Lifecycle.State.STARTED }
+        current.set("海岸"); count.set(7)
+        rule.runOnUiThread { owner.registry.currentState = androidx.lifecycle.Lifecycle.State.RESUMED }
+        rule.waitUntil(10000) { rule.onAllNodesWithText("海岸").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("7 项内容").assertIsDisplayed()
+        Assert.assertTrue(reads.get() > before)
+        current.set("海港"); count.set(9)
+        rule.onNodeWithTag("tag-list").performScrollToIndex(0).performTouchInput { swipeDown(durationMillis=600) }
+        rule.waitUntil(10000) { rule.onAllNodesWithText("海港").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("9 项内容").assertIsDisplayed()
+        rule.onNode(hasSetTextAction() and hasText("海",substring=false)).assertExists()
+        Assert.assertEquals("海",queries.last())
     }
 }
