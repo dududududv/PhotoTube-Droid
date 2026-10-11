@@ -48,8 +48,11 @@ internal fun MediaIcon(symbol: MediaSymbol, tint: Color = MediaColors.text, fill
                     if(symbol==MediaSymbol.HEART_OFF) line(Offset(3f,3f),Offset(21f,21f))
                 }
                 MediaSymbol.INFO -> {
-                    drawCircle(tint,9f,Offset(12f,12f),style=Stroke(1.7f)); drawCircle(tint,1f,Offset(12f,7f))
-                    path(listOf(Offset(10f,11f),Offset(12f,11f),Offset(12f,17f),Offset(14f,17f)))
+                    drawCircle(tint,9f,Offset(12f,12f),style=if(filled) androidx.compose.ui.graphics.drawscope.Fill else Stroke(1.7f))
+                    val ink = if(filled) MediaColors.background else tint
+                    drawCircle(ink,1f,Offset(12f,7f))
+                    drawPath(Path().apply { moveTo(10f,11f); lineTo(12f,11f); lineTo(12f,17f); lineTo(14f,17f) },
+                        ink, style = Stroke(1.7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
                 MediaSymbol.TRASH -> {
                     line(Offset(3f,6f),Offset(21f,6f)); path(listOf(Offset(9f,5f),Offset(9f,3f),Offset(15f,3f),Offset(15f,5f)))

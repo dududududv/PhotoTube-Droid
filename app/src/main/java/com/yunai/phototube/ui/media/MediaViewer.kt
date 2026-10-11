@@ -106,6 +106,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     var zoomed by remember { mutableStateOf(false) }
     var drag by remember { mutableFloatStateOf(0f) }
     var info by rememberSaveable { mutableStateOf(false) }
+    var detailBusy by remember { mutableStateOf(false) }
     val detailExtent = remember { Animatable(if (info) .56f else 0f) }
     LaunchedEffect(info) { detailExtent.animateTo(if (info) .56f else 0f, spring(1f, 450f)) }
     var more by remember { mutableStateOf(false) }
@@ -124,6 +125,7 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
     val context = LocalContext.current
     val resources = LocalResources.current
     val scene = rememberLayerBackdrop()
+    val detailsScene = rememberLayerBackdrop()
     var motionPlaying by remember(current.remote) {mutableStateOf(false)}
     val motionUrl=remote?.motionUrl()
     val videoMode=current.video || (motionPlaying && motionUrl!=null)
@@ -221,13 +223,14 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
             val landscapeVideo = videoMode && width > height
             val dismissal = (abs(drag) / height).coerceIn(0f,.6f)
             Box(Modifier.fillMaxSize().drawBehind { drawRect(MediaColors.background.copy(alpha=progress.value.coerceIn(0f,1f)*(1f-dismissal*1.4f))) })
-            Box(Modifier.fillMaxSize().then(if (info || detailExtent.value > .001f) Modifier.clearAndSetSemantics {} else Modifier).layerBackdrop(scene).graphicsLayer {
-                val safeTop = detailTopInset * (detailExtent.value / .56f).coerceIn(0f, 1f)
-                translationY = drag * progress.value.coerceIn(0f,1f) - height * detailExtent.value / 2f + safeTop / 2f
-                // Release the dismissal scale together with the translation so the
-                // closing image lands exactly on the original thumbnail bounds.
-                scaleX = (1f-dismissal*.35f*progress.value.coerceIn(0f,1f)) * (1f-detailExtent.value-safeTop/height).coerceAtLeast(.01f); scaleY = scaleX
-            }) {
+            val detailDensity = androidx.compose.ui.platform.LocalDensity.current
+            Box(Modifier.fillMaxWidth().height(with(detailDensity) { (height * (1f-detailExtent.value)).toDp() })
+                .padding(top = with(detailDensity) { (detailTopInset * (detailExtent.value / .56f).coerceIn(0f,1f)).toDp() })
+                .then(if (info || detailExtent.value > .001f) Modifier.clearAndSetSemantics {} else Modifier)
+                .layerBackdrop(scene).graphicsLayer {
+                    translationY = drag * progress.value.coerceIn(0f,1f)
+                    scaleX = 1f-dismissal*.35f*progress.value.coerceIn(0f,1f); scaleY = scaleX
+                }) {
                 HorizontalPager(pager, Modifier.fillMaxSize().testTag("media-pager").graphicsLayer { val p=progress.value.coerceIn(0f,1f)
                     // Warm the real photo layer during the final part of the transition.
                     // The video surface still takes over only when its transition ends.
@@ -396,8 +399,23 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
                 Text(message,color=MediaColors.text)
                 Box(Modifier.width(160.dp)) {com.yunai.phototube.ui.GlassSettingsAction("重试",{playback.retry()},media=true)}
             } }
-            if (info || detailExtent.value > .001f) MediaDetailsPanel(current, metadata, height, detailExtent,
-                onClose = { info = false }, onChanged = onRemoteChanged)
+            if (info || detailExtent.value > .001f) {
+                MediaDetailsPanel(current, metadata, height, detailExtent,
+                    onClose = { info = false }, onChanged = onRemoteChanged, onBusyChanged = { detailBusy = it }, modifier = Modifier.layerBackdrop(detailsScene))
+                Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 12.dp).testTag("detail-actions"),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    MediaGlassButton(if(sharing) "正在准备分享" else "分享", MediaSymbol.SHARE, detailsScene, ::share, enabled = !detailBusy, surfaceColor = MediaColors.detailPanel.copy(.88f))
+                    Row(Modifier.mediaGlass(detailsScene, surfaceColor = MediaColors.detailPanel.copy(.88f)).padding(horizontal = 6.dp)) {
+                        MediaAction(if(isFavorite) "取消收藏" else "收藏", MediaSymbol.HEART, ::toggleFavorite,
+                            filled = isFavorite, tint = if(isFavorite) viewerAccent else MediaColors.text, enabled = !remoteBusy && !detailBusy)
+                        IconButton(enabled = !detailBusy, onClick = { info = false }, modifier = Modifier.semantics {
+                            contentDescription = "收起照片信息"; selected = true
+                        }) { MediaIcon(MediaSymbol.INFO, filled = true) }
+                    }
+                    MediaGlassButton("删除", MediaSymbol.TRASH, detailsScene, { delete = true }, enabled = !remoteBusy && !detailBusy, surfaceColor = MediaColors.detailPanel.copy(.88f))
+                }
+            }
         }
         if(privateConfirm) GlassConfirmation(scene,
             title=if(current.remote?.server?.privateMedia==true) "移出私密空间？" else "移入私密空间？",
@@ -419,17 +437,17 @@ internal fun MediaViewer(request: ViewerRequest, favorites: Set<Int>, onFavorite
 }
 
 @Composable
-internal fun MediaGlassButton(label:String,symbol:MediaSymbol,backdrop:Backdrop,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text,enabled:Boolean=true) {
-    LiquidButton({if(enabled) onClick()},backdrop,Modifier.size(48.dp).graphicsLayer {alpha=if(enabled) 1f else .35f}.semantics { contentDescription=label;if(!enabled) disabled() },shape=CircleShape,horizontalPadding=0.dp,surfaceColor=MediaColors.scrim.copy(.24f)) {
+internal fun MediaGlassButton(label:String,symbol:MediaSymbol,backdrop:Backdrop,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text,enabled:Boolean=true,surfaceColor:Color=MediaColors.scrim.copy(.24f)) {
+    LiquidButton({if(enabled) onClick()},backdrop,Modifier.size(48.dp).graphicsLayer {alpha=if(enabled) 1f else .35f}.semantics { contentDescription=label;if(!enabled) disabled() },shape=CircleShape,horizontalPadding=0.dp,surfaceColor=surfaceColor) {
         MediaIcon(symbol,tint,filled)
     }
 }
 @Composable
-internal fun Modifier.mediaGlass(scene:Backdrop,scrimAlpha:Float=.24f):Modifier {
+internal fun Modifier.mediaGlass(scene:Backdrop,scrimAlpha:Float=.24f,surfaceColor:Color=MediaColors.scrim.copy(scrimAlpha)):Modifier {
     val glass=LocalGlassAppearance.current
     return drawBackdrop(backdrop=scene,shape={RoundedCornerShape(50)},
         effects={vibrancy();blur(glass.blur.dp.toPx());lens(glass.refractionHeight.dp.toPx(),glass.refractionAmount.dp.toPx(),chromaticAberration=glass.dispersion)},
-        onDrawSurface={drawRect(MediaColors.scrim.copy(scrimAlpha))})
+        onDrawSurface={drawRect(surfaceColor)})
 }
 @Composable
 private fun MediaAction(label:String,symbol:MediaSymbol,onClick:()->Unit,filled:Boolean=false,tint:Color=MediaColors.text,enabled:Boolean=true) {

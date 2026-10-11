@@ -9,10 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,6 +29,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.*
+import androidx.compose.ui.unit.Velocity
+import com.yunai.phototube.ui.theme.LocalThemeController
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -51,15 +52,16 @@ import kotlin.math.abs
 private enum class DetailPage { INFO, TAGS, PICK }
 
 /** Shares the viewer window and a single sheet; never opens another management dialog. */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, height: Float,
     extent: Animatable<Float, androidx.compose.animation.core.AnimationVector1D>, onClose: () -> Unit,
-    onChanged: () -> Unit) {
+    onChanged: () -> Unit, onBusyChanged: (Boolean) -> Unit = {}, modifier: Modifier = Modifier) {
     var page by rememberSaveable(photo.id) { mutableStateOf(DetailPage.INFO) }
     var busy by remember { mutableStateOf(false) }
     var needsRefresh by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    SideEffect { onBusyChanged(busy) }
+    DisposableEffect(Unit) { onDispose { onBusyChanged(false) } }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val focus = LocalFocusManager.current
@@ -71,6 +73,30 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
     val source = photo.remote
     val tags = photoTags(source?.detail)
     val infoScroll = rememberScrollState()
+    val accent = LocalThemeController.current.accent.dark
+    val currentBusy by rememberUpdatedState(busy)
+    val currentClose by rememberUpdatedState(onClose)
+    val scrollConnection = remember(height) { object : NestedScrollConnection {
+        fun shift(delta: Float): Offset {
+            if (currentBusy) return Offset.Zero
+            val target = (extent.value - delta / height).coerceIn(.08f, .88f)
+            val consumed = (extent.value - target) * height
+            scope.launch { extent.snapTo(target) }
+            return Offset(0f, consumed)
+        }
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
+            if (source == NestedScrollSource.UserInput && available.y < 0 && extent.value < .88f) shift(available.y) else Offset.Zero
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+            if (source == NestedScrollSource.UserInput && available.y > 0) shift(available.y) else Offset.Zero
+        override suspend fun onPreFling(available: Velocity): Velocity {
+            if (currentBusy) return Velocity.Zero
+            val projected = extent.value - available.y / height * .15f
+            val target = listOf(0f, .56f, .88f).minBy { abs(it - projected) }
+            if (extent.value >= .879f && available.y < 0) return Velocity.Zero
+            if (target == 0f) currentClose() else extent.animateTo(target, spring(1f, 450f), initialVelocity = -available.y / height)
+            return available
+        }
+    } }
     fun back() {
         if (busy) return
         when (page) { DetailPage.PICK -> page = DetailPage.TAGS; DetailPage.TAGS -> page = DetailPage.INFO; DetailPage.INFO -> onClose() }
@@ -96,34 +122,23 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
     Box(Modifier.fillMaxSize().pointerInput(busy) { detectTapGestures { if (!busy) onClose() } })
     Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
         .height(with(density) { (height * extent.value).toDp() })
-        .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
-        .background(MediaColors.detailPanel).testTag("media-details-panel")
-        .semantics { isTraversalGroup = true; paneTitle = "照片与视频信息" }
-        .navigationBarsPadding().imePadding()) {
-        Box(Modifier.fillMaxWidth().height(32.dp).testTag("media-details-handle")
-            .semantics {
-                contentDescription = "调整信息面板高度"
-                expand { if (!busy) { scope.launch { extent.animateTo(.88f, spring(1f, 450f)) }; true } else false }
-                collapse { if (!busy) { scope.launch { extent.animateTo(.56f, spring(1f, 450f)) }; true } else false }
-                dismiss { if (!busy) { onClose(); true } else false }
-            }
-            .draggable(rememberDraggableState { delta -> scope.launch { extent.snapTo((extent.value - delta / height).coerceIn(.08f, .88f)) } },
-                Orientation.Vertical, enabled = !busy, onDragStarted = { extent.stop() }, onDragStopped = { velocity ->
-                    val projected = extent.value - velocity / height * .18f
-                    val target = listOf(0f, .56f, .88f).minBy { abs(it - projected) }
-                    if (target == 0f) onClose() else extent.animateTo(target, spring(1f, 450f), initialVelocity = -velocity / height)
-                }), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(34.dp, 4.dp).background(Color.White.copy(.25f), RoundedCornerShape(2.dp)))
+        .then(modifier).background(MediaColors.background).testTag("media-details-panel")
+        .semantics {
+            isTraversalGroup = true; paneTitle = "照片与视频信息"
+            expand { scope.launch { extent.animateTo(.88f, spring(1f, 450f)) }; true }
+            collapse { scope.launch { extent.animateTo(.56f, spring(1f, 450f)) }; true }
+            dismiss { if (!busy) { onClose(); true } else false }
         }
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (page != DetailPage.INFO) IconButton(onClick = ::back, enabled = !busy,
-                modifier = Modifier.semantics { contentDescription = if (page == DetailPage.PICK) "返回照片标签" else "返回照片信息" }) { MediaIcon(MediaSymbol.BACK) }
-            Text(when(page) {DetailPage.INFO -> "照片信息"; DetailPage.TAGS -> "照片标签"; DetailPage.PICK -> "添加标签"},
-                Modifier.weight(1f).padding(start = if (page == DetailPage.INFO) 12.dp else 0.dp),
-                color = MediaColors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            IconButton(onClick = { if (!busy) onClose() }, enabled = !busy) {
-                Icon(Icons.Rounded.Close, "关闭信息面板", tint = MediaColors.text)
+        .nestedScroll(scrollConnection)
+        .navigationBarsPadding().imePadding()) {
+        if (page != DetailPage.INFO) Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = ::back, enabled = !busy,
+                modifier = Modifier.semantics { contentDescription = if (page == DetailPage.PICK) "返回照片标签" else "返回照片信息" }) {
+                MediaIcon(MediaSymbol.BACK, accent)
+                Text(if (page == DetailPage.PICK) "标签" else "信息", color = accent)
             }
+            Text(if (page == DetailPage.PICK) "添加标签" else "照片标签", color = MediaColors.text,
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth(), color = MediaColors.text)
         error?.let { Text(it, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = MediaColors.text) }
@@ -138,34 +153,46 @@ internal fun BoxScope.MediaDetailsPanel(photo: Photo, metadata: MediaMetadata?, 
         AnimatedContent(page, Modifier.weight(1f), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "detail-section") { section ->
             when (section) {
                 DetailPage.INFO -> Column(Modifier.fillMaxSize().testTag("media-info").verticalScroll(infoScroll)
-                    .padding(horizontal = 24.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(photo.name, color = MediaColors.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                        Text(source?.detail?.nullString("takenAt")?.let { com.yunai.phototube.ui.remote.taskTimestamp(it) } ?: photo.date,
-                            color = MediaColors.secondary, fontSize = 14.sp)
-                        Text(buildList {
-                            add(photo.name.substringAfterLast('.', if(photo.video) "视频" else "照片").uppercase())
+                    .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 82.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MediaColors.detailPanel)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(source?.detail?.nullString("takenAt")?.let { com.yunai.phototube.ui.remote.taskTimestamp(it) } ?: photo.date,
+                                color = MediaColors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            Text(photo.name, color = MediaColors.secondary, fontSize = 15.sp)
+                        }
+                        HorizontalDivider(color = Color.White.copy(.10f))
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (photo.video) "视频" else "照片", Modifier.weight(1f), color = MediaColors.text, fontSize = 16.sp)
+                            Text(photo.name.substringAfterLast('.', if(photo.video) "视频" else "照片").uppercase(),
+                                Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(.08f)).padding(horizontal = 10.dp, vertical = 4.dp),
+                                color = MediaColors.text, fontSize = 13.sp)
+                        }
+                        val specs = buildList {
                             metadata?.takeIf { it.width > 0 && it.height > 0 }?.let { add("${it.width} × ${it.height}") }
                             metadata?.takeIf { it.bytes > 0 }?.let { add(mediaSizeLabel(it.bytes)) }
                             metadata?.takeIf { photo.video && it.duration > 0 }?.let { add(mediaTime(it.duration)) }
-                        }.joinToString("  ·  "), color = MediaColors.secondary, fontSize = 14.sp)
+                        }
+                        if (specs.isNotEmpty()) {
+                            HorizontalDivider(color = Color.White.copy(.10f))
+                            Text(specs.joinToString(" · "), Modifier.padding(16.dp), color = MediaColors.secondary, fontSize = 15.sp)
+                        }
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("标签", Modifier.weight(1f), color = MediaColors.text, fontWeight = FontWeight.SemiBold)
-                        if (source != null) TextButton(onClick = { page = DetailPage.TAGS }, enabled = source.detail != null) { Text("编辑标签", color = MediaColors.text) }
+                    source?.detail?.nullString("relativePath")?.let { path ->
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MediaColors.detailPanel).padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("文件位置", color = MediaColors.secondary, fontSize = 13.sp)
+                            Text(path, color = MediaColors.text, fontSize = 15.sp)
+                        }
                     }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (tags.isEmpty()) Text("暂无标签", color = MediaColors.secondary)
-                        tags.forEach { tag -> Text(tag.name, Modifier.clip(RoundedCornerShape(14.dp)).background(Color.White.copy(.08f))
-                            .padding(horizontal = 14.dp, vertical = 10.dp), color = MediaColors.text) }
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MediaColors.detailPanel)
+                        .clickable(enabled = source?.detail != null) { page = DetailPage.TAGS }.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(if (tags.isEmpty()) "添加标签" else "编辑标签", color = accent, fontSize = 16.sp)
+                        if (tags.isNotEmpty()) Text(tags.joinToString(" · ") { it.name }, color = MediaColors.text, fontSize = 15.sp)
                     }
-                    source?.detail?.nullString("relativePath")?.let { path -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("文件位置", color = MediaColors.secondary, fontSize = 13.sp)
-                        Text(path, color = MediaColors.text, fontSize = 15.sp)
-                    } }
                     source?.detail?.nullString("state")?.takeIf { it != "BROWSABLE" }?.let { Text(mediaStateLabel(it), color = MediaColors.secondary) }
                 }
-                DetailPage.TAGS -> LazyColumn(Modifier.fillMaxSize().testTag("photo-tags-panel"), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp)) {
+                DetailPage.TAGS -> LazyColumn(Modifier.fillMaxSize().testTag("photo-tags-panel"), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 82.dp)) {
                     item { Text(photo.name, color = MediaColors.secondary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 12.dp)) }
                     if (tags.isEmpty()) item { Text("这张照片还没有标签", color = MediaColors.secondary) }
                     items(tags, key = { it.id }) { tag ->
@@ -201,7 +228,7 @@ private fun DetailTagPicker(server: PhotoTubeServer, selected: Set<Long>, enable
     val catalog = remember(server) { FilterCatalog(server) }
     val flow = remember(server, query) { Pager(PagingConfig(100, enablePlaceholders = false)) { AlbumPagingSource { cursor -> catalog.tags(query, cursor) } }.flow }
     val rows = flow.collectAsLazyPagingItems()
-    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp).padding(bottom = 82.dp)) {
         OutlinedTextField(keyword, { if (it.length <= 120) keyword = it }, placeholder = { Text("搜索标签") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("detail-tag-search").onFocusChanged { if (it.isFocused) onSearchFocus() }, enabled = enabled, shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = MediaColors.text, unfocusedTextColor = MediaColors.text,

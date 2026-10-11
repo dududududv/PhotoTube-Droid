@@ -170,7 +170,7 @@ class TagsTest {
             MediaDetailsPanel(Photo(1,"海边.jpg","2026年9月16日",remote=source),null,
                 constraints.maxHeight.toFloat(),remember { Animatable(.88f) },{}, {})
         } } }
-        rule.onNodeWithText("编辑标签").performClick()
+        rule.onNodeWithText("添加标签").performClick()
         rule.onNodeWithText("添加标签").performClick()
         rule.onNodeWithTag("detail-tag-search").performTextInput("新标签")
         rule.waitUntil(10000) {rule.onAllNodesWithText("新建“新标签”并添加").fetchSemanticsNodes().isNotEmpty()}

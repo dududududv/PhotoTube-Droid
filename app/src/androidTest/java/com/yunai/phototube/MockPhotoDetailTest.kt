@@ -56,6 +56,9 @@ class MockPhotoDetailTest : LocalFixtureAppTest() {
         rule.onNodeWithTag("media-info").assertIsDisplayed()
         rule.onNodeWithTag("media-filmstrip").assertDoesNotExist()
         rule.onNodeWithContentDescription("关闭照片").assertDoesNotExist()
+        rule.onNodeWithTag("detail-actions").assertIsDisplayed()
+        rule.onNodeWithText("照片信息").assertDoesNotExist()
+        rule.onNodeWithContentDescription("关闭信息面板").assertDoesNotExist()
         screenshot("panel-info")
         rule.onNodeWithText("编辑标签").performClick()
         rule.onNodeWithTag("photo-tags-panel").assertIsDisplayed()
@@ -63,17 +66,17 @@ class MockPhotoDetailTest : LocalFixtureAppTest() {
         rule.onNodeWithText("添加标签").performClick()
         rule.onNodeWithTag("detail-tag-picker").assertIsDisplayed()
         screenshot("panel-picker")
-        rule.onNodeWithTag("media-details-handle").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.Expand)
+        rule.onNodeWithTag("media-details-panel").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.Expand)
         screenshot("panel-expanded")
         val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         device.pressBack()
         rule.onNodeWithTag("photo-tags-panel").assertIsDisplayed()
         device.pressBack()
         rule.onNodeWithTag("media-info").assertIsDisplayed()
-        rule.onNodeWithTag("media-details-handle").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.Collapse)
+        rule.onNodeWithTag("media-details-panel").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.Collapse)
         rule.waitForIdle()
-        rule.onNodeWithTag("media-details-handle").performTouchInput {
-            swipe(center, center.copy(y = center.y + 900), 400)
+        rule.onNodeWithTag("media-info").performTouchInput {
+            swipe(androidx.compose.ui.geometry.Offset(center.x, 20f), androidx.compose.ui.geometry.Offset(center.x, 950f), 400)
         }
         rule.waitUntil(10000) { rule.onAllNodesWithTag("media-details-panel").fetchSemanticsNodes().isEmpty() }
         rule.onNodeWithContentDescription("关闭照片").assertIsDisplayed()
