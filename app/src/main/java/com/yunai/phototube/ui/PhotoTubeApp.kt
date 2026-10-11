@@ -138,9 +138,9 @@ internal fun PhotoTubeContent(wall:PhotoWallViewModel=viewModel()) {
         val glassStrength = theme.opacity
         val backdrop = rememberLayerBackdrop()
         val cornerInsets = rememberCornerInsets()
-        val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+        val tabHaptics = rememberTabHaptics()
         fun selectTab(index: Int) {
-            if (index != tab && haptics) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
+            if (index != tab && haptics) tabHaptics.tick()
             if (tab != index) compact = false
             tab = index
         }
